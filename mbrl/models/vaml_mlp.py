@@ -10,6 +10,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
+import numpy as np
 
 import mbrl.util.math
 
@@ -17,7 +18,7 @@ from .model import Ensemble
 from .util import EnsembleLinearLayer, truncated_normal_init
 
 
-class GaussianMLP(Ensemble):
+class VAMLMLP(Ensemble):
     """Implements an ensemble of multi-layer perceptrons each modeling a Gaussian distribution.
 
     This model corresponds to a Probabilistic Ensemble in the Chua et al.,
@@ -61,9 +62,14 @@ class GaussianMLP(Ensemble):
         deterministic (bool): if ``True``, the model will be trained using MSE loss and no
             logvar prediction will be done. Defaults to ``False``.
         propagation_method (str, optional): the uncertainty propagation method to use (see
-            above). Defaults to ``None``.
-        learn_logvar_bounds (bool): if ``True``, the logvar bounds will be learned, otherwise
-            they will be constant. Defaults to ``False``.
+            above). Defaults to ``None``            # quantile clipping
+            norms = torch.sqrt(torch.sum(g ** 2, -1))
+            quantile_bound = np.quantile(norms.detach().cpu().numpy(), 0.95)
+            # absolute bound on gradients
+            norms = norms.unsqueeze(1)
+            if self.bound_clipping:
+                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g)
+
     """
 
     # TODO integrate this with the checkpoint in the next version
@@ -78,12 +84,14 @@ class GaussianMLP(Ensemble):
         ensemble_size: int = 1,
         hid_size: int = 200,
         use_silu: bool = False,
-        deterministic: bool = False,
         propagation_method: Optional[str] = None,
-        learn_logvar_bounds: bool = False,
+        bound_clipping: bool = False,
+        use_vaml: bool = False,
+        use_scaling: bool = True,
+        add_mse: bool = False
     ):
         super().__init__(
-            ensemble_size, device, propagation_method, deterministic=deterministic
+            ensemble_size, device, propagation_method, deterministic=True
         )
 
         self.in_size = in_size
@@ -106,16 +114,7 @@ class GaussianMLP(Ensemble):
             )
         self.hidden_layers = nn.Sequential(*hidden_layers)
 
-        if deterministic:
-            self.mean_and_logvar = create_linear_layer(hid_size, out_size)
-        else:
-            self.mean_and_logvar = create_linear_layer(hid_size, 2 * out_size)
-            self.min_logvar = nn.Parameter(
-                -10 * torch.ones(1, out_size), requires_grad=learn_logvar_bounds
-            )
-            self.max_logvar = nn.Parameter(
-                0.5 * torch.ones(1, out_size), requires_grad=learn_logvar_bounds
-            )
+        self.mean_and_logvar = create_linear_layer(hid_size, out_size)
 
         self.apply(truncated_normal_init)
         self.to(self.device)
@@ -123,6 +122,12 @@ class GaussianMLP(Ensemble):
         self.elite_models: List[int] = None
 
         self._propagation_indices: torch.Tensor = None
+
+        # VAML settings
+        self.bound_clipping = bound_clipping
+        self.use_vaml = use_vaml
+        self.use_scaling = use_scaling
+        self.add_mse = add_mse
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -142,14 +147,7 @@ class GaussianMLP(Ensemble):
         x = self.hidden_layers(x)
         mean_and_logvar = self.mean_and_logvar(x)
         self._maybe_toggle_layers_use_only_elite(only_elite)
-        if self.deterministic:
-            return mean_and_logvar, None
-        else:
-            mean = mean_and_logvar[..., : self.out_size]
-            logvar = mean_and_logvar[..., self.out_size :]
-            logvar = self.max_logvar - F.softplus(self.max_logvar - logvar)
-            logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
-            return mean, logvar
+        return mean_and_logvar, None
 
     def _forward_from_indices(
         self, x: torch.Tensor, model_shuffle_indices: torch.Tensor
@@ -268,28 +266,93 @@ class GaussianMLP(Ensemble):
         return self._default_forward(x)
 
     def _mse_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        assert model_in.ndim == target.ndim
+        # assert model_in.ndim == target.ndim
         if model_in.ndim == 2:  # add model dimension
             model_in = model_in.unsqueeze(0)
             target = target.unsqueeze(0)
         pred_mean, _ = self.forward(model_in, use_propagation=False)
-        return F.mse_loss(pred_mean, target, reduction="none").sum((1, 2)).sum()
+        return F.mse_loss(pred_mean, target, reduction="none")
 
-    def _nll_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        assert model_in.ndim == target.ndim
+    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # assert model_in.ndim == target.ndim
         if model_in.ndim == 2:  # add ensemble dimension
             model_in = model_in.unsqueeze(0)
             target = target.unsqueeze(0)
-        pred_mean, pred_logvar = self.forward(model_in, use_propagation=False)
+        pred_mean, _ = self.forward(model_in, use_propagation=False)
         if target.shape[0] != self.num_members:
             target = target.repeat(self.num_members, 1, 1)
-        nll = (
-            mbrl.util.math.gaussian_nll(pred_mean, pred_logvar, target, reduce=False)
-            .mean((1, 2))  # average over batch and target dimension
-            .sum()
-        )  # sum over ensemble dimension
-        nll += 0.01 * (self.max_logvar.sum() - self.min_logvar.sum())
-        return nll
+        
+        target.requires_grad = True
+
+        vf_pred = self.values(target[..., :-1])
+        vaml_loss = 0.
+
+        for i, vf in enumerate(vf_pred):
+            if i == len(vf) - 1:
+                # annoying hack to prevent memory leak in the graph
+                vf.sum().backward(retain_graph=False)
+            else:
+                vf.sum().backward(retain_graph=True)
+            g = target.grad.detach().squeeze()[..., :-1]
+
+            # quantile clipping
+            norms = torch.sqrt(torch.sum(g ** 2, -1))
+            quantile_bound = np.quantile(norms.detach().cpu().numpy(), 0.95)
+            # absolute bound on gradients
+            norms = norms.unsqueeze(-1)
+            if self.bound_clipping:
+                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g)
+
+            vaml_loss += (torch.sum(g * (pred_mean[..., :-1] - target[..., :-1]), -1, keepdim=True) ** 2)
+            self._agent.critic.zero_grad()
+            self._agent.critic_target.zero_grad()
+            target.grad[:] = 0.
+        
+        target.requires_grad = False
+        
+        vaml_loss /= len(vf_pred)
+
+        # reward component
+        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
+        
+        return vaml_loss
+
+    def _vaml_scaling_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        if model_in.ndim == 2:  # add ensemble dimension
+            model_in = model_in.unsqueeze(0)
+            target = target.unsqueeze(0)
+        pred_mean, _ = self.forward(model_in, use_propagation=False)
+        if target.shape[0] != self.num_members:
+            target = target.repeat(self.num_members, 1, 1)
+        
+        target.requires_grad = True
+
+        vf_pred = self.values(target[..., :-1])
+        vaml_loss = 0.
+
+        for vf in vf_pred:
+            vf.sum().backward(retain_graph=True)
+            g = target.grad.detach().squeeze()[..., :-1]
+
+            # quantile clipping
+            norms = torch.sqrt(torch.sum(g ** 2, -1))
+            quantile_bound = np.quantile(norms.detach().cpu().numpy(), 0.95)
+            # absolute bound on gradients
+            norms = norms.unsqueeze(-1)
+            if self.bound_clipping:
+                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g)
+
+            vaml_loss += ((torch.abs(g) * (pred_mean[..., :-1] - target[..., :-1])) ** 2)
+            self._agent.critic.zero_grad()
+            self._agent.critic_target.zero_grad()
+            target.grad[:] = 0.
+        
+        vaml_loss /= len(vf_pred)
+        
+        # reward component
+        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
+        
+        return vaml_loss
 
     def loss(
         self,
@@ -314,11 +377,15 @@ class GaussianMLP(Ensemble):
             the model over the given input/target. If the model is an ensemble, returns
             the average over all models.
         """
-        if self.deterministic:
-            loss = self._mse_loss(model_in, target)
+        if self.use_vaml:
+            loss = self._vaml_loss(model_in, target)
+        elif self.use_scaling:
+            loss = self._vaml_scaling_loss(model_in, target)
         else:
-            loss = self._nll_loss(model_in, target)
-        return loss
+            raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+        if self.add_mse:
+            loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
+        return loss.mean()
 
     def eval_score(  # type: ignore
         self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None
@@ -338,12 +405,17 @@ class GaussianMLP(Ensemble):
         Returns:
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
-        assert model_in.ndim == 2 and target.ndim == 2
-        with torch.no_grad():
-            pred_mean, _ = self.forward(model_in, use_propagation=False)
-            target = target.repeat((self.num_members, 1, 1))
-            loss = F.mse_loss(pred_mean, target, reduction="none")
-            return loss
+        # target = target.repeat((self.num_members, 1, 1))
+        if self.use_vaml:
+            loss = self._vaml_loss(model_in, target)
+        elif self.use_scaling:
+            loss = self._vaml_scaling_loss(model_in, target)
+        else:
+            raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+        if self.add_mse:
+            loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
+        return loss
+
 
     def reset(  # type: ignore
         self, x: torch.Tensor, rng: Optional[torch.Generator] = None
@@ -411,3 +483,15 @@ class GaussianMLP(Ensemble):
                 self.elite_models = pickle.load(f)
         else:
             warnings.warn("No elite model information found in model load directory.")
+
+    def set_agent(self, agent):
+        self._agent = agent
+
+    def values(self, input):
+        dist = self._agent.actor(input)
+        next_action = dist.rsample()
+
+        values = self._agent.critic(input, next_action.detach())
+        values_target = self._agent.critic_target(input, next_action.detach())
+        all_values = torch.stack([*values, *values_target], 0)
+        return all_values.squeeze(1)

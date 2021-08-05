@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+from mbrl.models.vaml_mlp import VAMLMLP
 import os
 from typing import Optional, Tuple, cast
 
@@ -36,7 +37,6 @@ def rollout_model_and_populate_sac_buffer(
     rollout_horizon: int,
     batch_size: int,
 ):
-
     batch = replay_buffer.sample(batch_size)
     initial_obs, *_ = cast(mbrl.types.TransitionBatch, batch).astuple()
     obs = model_env.reset(
@@ -174,10 +174,16 @@ def train(
         weight_decay=cfg.overrides.model_wd,
         logger=None if silent else logger,
     )
+    if type(dynamics_model.model) == VAMLMLP:
+        dynamics_model.model.set_agent(agent)
+        # add mse for first epoch
+        dynamics_model.model.add_mse = True
+
     best_eval_reward = -np.inf
     epoch = 0
     sac_buffer = None
     while env_steps < cfg.overrides.num_steps:
+        print(env_steps)
         rollout_length = int(
             mbrl.util.math.truncated_linear(
                 *(cfg.overrides.rollout_schedule + [epoch + 1])
@@ -266,6 +272,9 @@ def train(
                         agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
                     )
                 epoch += 1
+                
+                if type(dynamics_model.model) == VAMLMLP:
+                    dynamics_model.model.add_mse = False
 
             env_steps += 1
             obs = next_obs

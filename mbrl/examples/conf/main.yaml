@@ -1,6 +1,6 @@
 defaults:
   - algorithm: pets
-  - dynamics_model: gaussian_mlp_ensemble
+  - dynamics_model: vaml_ensemble
   - overrides: pets_cartpole
 
 seed: 0

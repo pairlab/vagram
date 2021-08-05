@@ -16,6 +16,7 @@ rollout_schedule: [20, 150, 1, 1]
 num_sac_updates_per_step: 40
 sac_updates_every_steps: 1
 num_epochs_to_retain_sac_buffer: 1
+num_epochs_train_model: 50
 
 sac_alpha_lr: 0.0003
 sac_actor_lr: 0.0003

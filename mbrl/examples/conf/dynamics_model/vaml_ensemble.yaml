@@ -1,0 +1,15 @@
+# @package _group_
+model:
+  _target_: mbrl.models.VAMLMLP
+  device: ${device}
+  num_layers: 4
+  in_size: ???
+  out_size: ???
+  ensemble_size: 7
+  hid_size: 200
+  use_silu: true
+  use_scaling: true
+  use_vaml: false
+  add_mse: false
+  bound_clipping: true
+  propagation_method: random_model

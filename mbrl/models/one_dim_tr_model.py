@@ -222,9 +222,8 @@ class OneDTransitionRewardModel(Model):
             (tensor): as returned by `model.eval_score().`
         """
         assert target is None
-        with torch.no_grad():
-            model_in, target = self._get_model_input_and_target_from_batch(batch)
-            return self.model.eval_score(model_in, target=target)
+        model_in, target = self._get_model_input_and_target_from_batch(batch)
+        return self.model.eval_score(model_in, target=target)
 
     def get_output_and_targets(
         self, batch: mbrl.types.TransitionBatch
