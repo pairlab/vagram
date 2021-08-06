@@ -124,6 +124,7 @@ def train(
     agent = hydra.utils.instantiate(cfg.algorithm.agent)
 
     work_dir = work_dir or os.getcwd()
+
     # enable_back_compatible to use pytorch_sac agent
     logger = mbrl.util.Logger(work_dir, enable_back_compatible=True)
     logger.register_group(
@@ -143,17 +144,44 @@ def train(
     # -------------- Create initial overrides. dataset --------------
     dynamics_model = mbrl.util.common.create_one_dim_tr_model(cfg, obs_shape, act_shape)
 
+
+    # insert annoying preemption code here
+
+    # save all model and trainer chpts
     replay_buffer = mbrl.util.common.create_replay_buffer(
         cfg, obs_shape, act_shape, rng=rng
     )
-    random_explore = cfg.algorithm.random_initial_explore
-    mbrl.util.common.rollout_agent_trajectories(
-        env,
-        cfg.algorithm.initial_exploration_steps,
-        mbrl.planning.RandomAgent(env) if random_explore else agent,
-        {} if random_explore else {"sample": True, "batched": False},
-        replay_buffer=replay_buffer,
-    )
+
+    try:
+        with open(os.path.join(work_dir, "epoch.txt"), "r") as f:
+            epoch = int(f.read())
+    except FileNotFoundError as e:
+        epoch = 0
+
+    if epoch > 0:
+        replay_buffer.load(work_dir)
+        dynamics_model.load(work_dir)
+        critic_weights = torch.load(os.path.join(work_dir, "critic.pth"))
+        agent.critic.load_state_dict(critic_weights)
+        actor_weights = torch.load(os.path.join(work_dir, "actor.pth"))
+        agent.actor.load_state_dict(actor_weights)
+    else:
+        random_explore = cfg.algorithm.random_initial_explore
+        mbrl.util.common.rollout_agent_trajectories(
+            env,
+            cfg.algorithm.initial_exploration_steps,
+            mbrl.planning.RandomAgent(env) if random_explore else agent,
+            {} if random_explore else {"sample": True, "batched": False},
+            replay_buffer=replay_buffer,
+        )
+        replay_buffer.save(work_dir)
+        dynamics_model.save(work_dir)
+        torch.save(
+            agent.critic.state_dict(), os.path.join(work_dir, "critic.pth")
+        )
+        torch.save(
+            agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
+        )
 
     # ---------------------------------------------------------
     # --------------------- Training Loop ---------------------
@@ -163,8 +191,8 @@ def train(
     trains_per_epoch = int(
         np.ceil(cfg.overrides.epoch_length / cfg.overrides.freq_train_model)
     )
-    updates_made = 0
-    env_steps = 0
+    updates_made = epoch * cfg.overrides.epoch_length * cfg.overrides.num_sac_updates_per_step
+    env_steps = epoch * cfg.overrides.epoch_length
     model_env = mbrl.models.ModelEnv(
         env, dynamics_model, termination_fn, None, generator=torch_generator
     )
@@ -175,12 +203,12 @@ def train(
         logger=None if silent else logger,
     )
     if type(dynamics_model.model) == VAMLMLP:
+        print("Adding agent")
         dynamics_model.model.set_agent(agent)
         # add mse for first epoch
         dynamics_model.model.add_mse = True
 
     best_eval_reward = -np.inf
-    epoch = 0
     sac_buffer = None
     while env_steps < cfg.overrides.num_steps:
         print(env_steps)
@@ -262,17 +290,18 @@ def train(
                         "rollout_length": rollout_length,
                     },
                 )
-                if avg_reward > best_eval_reward:
-                    video_recorder.save(f"{epoch}.mp4")
-                    best_eval_reward = avg_reward
-                    torch.save(
-                        agent.critic.state_dict(), os.path.join(work_dir, "critic.pth")
-                    )
-                    torch.save(
-                        agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
-                    )
+                video_recorder.save(f"{epoch}.mp4")
+                best_eval_reward = avg_reward
+                torch.save(
+                    agent.critic.state_dict(), os.path.join(work_dir, "critic.pth")
+                )
+                torch.save(
+                    agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
+                )
                 epoch += 1
-                
+                with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
+                    f.write(str(epoch))
+
                 if type(dynamics_model.model) == VAMLMLP:
                     dynamics_model.model.add_mse = False
 

@@ -12,4 +12,6 @@ model:
   use_vaml: false
   add_mse: false
   bound_clipping: true
+  bound_clipping_quantile: 0.95
+  use_all_vf: true
   propagation_method: random_model
