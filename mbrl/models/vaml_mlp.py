@@ -317,6 +317,7 @@ class VAMLMLP(Ensemble):
                 vaml_loss += ((g * (pred_mean[..., :-1] - target[..., :-1])) ** 2)
             else:
                 raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+            
             self._agent.critic.zero_grad()
             self._agent.critic_target.zero_grad()
             target.grad[:] = 0.

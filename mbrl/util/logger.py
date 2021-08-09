@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
+import os
 import csv
 import pathlib
 from typing import Counter, Dict, List, Mapping, Tuple, Union
@@ -47,14 +48,14 @@ class MetersGroup(object):
         self._csv_file_path = self._prepare_file(file_name, ".csv")
         self._formatting = formatting
         self._meters: Dict[str, AverageMeter] = collections.defaultdict(AverageMeter)
-        self._csv_file = open(self._csv_file_path, "w")
+        self._csv_file = open(self._csv_file_path, "a")
         self._csv_writer = None
 
     @staticmethod
     def _prepare_file(prefix: Union[str, pathlib.Path], suffix: str) -> pathlib.Path:
         file_path = pathlib.Path(prefix).with_suffix(suffix)
-        if file_path.exists():
-            file_path.unlink()
+        # if file_path.exists():
+        #     file_path.unlink()
         return file_path
 
     def log(self, key: str, value: float):
@@ -65,7 +66,11 @@ class MetersGroup(object):
             self._csv_writer = csv.DictWriter(
                 self._csv_file, fieldnames=sorted(data.keys()), restval=0.0
             )
-            self._csv_writer.writeheader()
+            print("initializing new")
+            if os.stat(self._csv_file_path).st_size == 0:
+                print("Writing header")
+                self._csv_writer.writeheader()
+        print(f"Dumping {data}")
         self._csv_writer.writerow(data)
         self._csv_file.flush()
 
