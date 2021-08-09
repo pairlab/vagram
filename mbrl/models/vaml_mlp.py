@@ -86,8 +86,10 @@ class VAMLMLP(Ensemble):
         use_silu: bool = False,
         propagation_method: Optional[str] = None,
         bound_clipping: bool = False,
+        bound_clipping_quantile=0.95,
         use_vaml: bool = False,
         use_scaling: bool = True,
+        use_all_vf: bool = True,
         add_mse: bool = False
     ):
         super().__init__(
@@ -125,9 +127,11 @@ class VAMLMLP(Ensemble):
 
         # VAML settings
         self.bound_clipping = bound_clipping
+        self.bound_clipping_quantile = bound_clipping_quantile
         self.use_vaml = use_vaml
         self.use_scaling = use_scaling
         self.add_mse = add_mse
+        self.use_all_vf = use_all_vf
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -283,6 +287,8 @@ class VAMLMLP(Ensemble):
             target = target.repeat(self.num_members, 1, 1)
         
         target.requires_grad = True
+        self._agent.critic.requires_grad = False
+        self._agent.critic_target.requires_grad = False
 
         vf_pred = self.values(target[..., :-1])
         vaml_loss = 0.
@@ -293,22 +299,31 @@ class VAMLMLP(Ensemble):
                 vf.sum().backward(retain_graph=False)
             else:
                 vf.sum().backward(retain_graph=True)
-            g = target.grad.detach().squeeze()[..., :-1]
+            g = target.grad.clone().detach().squeeze()[..., :-1]
 
             # quantile clipping
-            norms = torch.sqrt(torch.sum(g ** 2, -1))
-            quantile_bound = np.quantile(norms.detach().cpu().numpy(), 0.95)
-            # absolute bound on gradients
-            norms = norms.unsqueeze(-1)
             if self.bound_clipping:
-                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g)
-
-            vaml_loss += (torch.sum(g * (pred_mean[..., :-1] - target[..., :-1]), -1, keepdim=True) ** 2)
+                norms = torch.sqrt(torch.sum(g ** 2, -1))
+                quantile_bound = np.quantile(norms.detach().cpu().numpy(), self.bound_clipping_quantile)
+                # absolute bound on gradients
+                norms = norms.unsqueeze(-1)
+                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g).detach()
+            else:
+                # hack to force copying the tensor
+                g = g.clone().detach()
+            if self.use_vaml:
+                vaml_loss += (torch.sum(g * (pred_mean[..., :-1] - target[..., :-1]), -1, keepdim=True) ** 2)
+            elif self.use_scaling:
+                vaml_loss += ((g * (pred_mean[..., :-1] - target[..., :-1])) ** 2)
+            else:
+                raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
             self._agent.critic.zero_grad()
             self._agent.critic_target.zero_grad()
             target.grad[:] = 0.
         
         target.requires_grad = False
+        self._agent.critic.requires_grad = True
+        self._agent.critic_target.requires_grad = True
         
         vaml_loss /= len(vf_pred)
 
@@ -316,44 +331,7 @@ class VAMLMLP(Ensemble):
         vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
         
         return vaml_loss
-
-    def _vaml_scaling_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        if model_in.ndim == 2:  # add ensemble dimension
-            model_in = model_in.unsqueeze(0)
-            target = target.unsqueeze(0)
-        pred_mean, _ = self.forward(model_in, use_propagation=False)
-        if target.shape[0] != self.num_members:
-            target = target.repeat(self.num_members, 1, 1)
-        
-        target.requires_grad = True
-
-        vf_pred = self.values(target[..., :-1])
-        vaml_loss = 0.
-
-        for vf in vf_pred:
-            vf.sum().backward(retain_graph=True)
-            g = target.grad.detach().squeeze()[..., :-1]
-
-            # quantile clipping
-            norms = torch.sqrt(torch.sum(g ** 2, -1))
-            quantile_bound = np.quantile(norms.detach().cpu().numpy(), 0.95)
-            # absolute bound on gradients
-            norms = norms.unsqueeze(-1)
-            if self.bound_clipping:
-                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g)
-
-            vaml_loss += ((torch.abs(g) * (pred_mean[..., :-1] - target[..., :-1])) ** 2)
-            self._agent.critic.zero_grad()
-            self._agent.critic_target.zero_grad()
-            target.grad[:] = 0.
-        
-        vaml_loss /= len(vf_pred)
-        
-        # reward component
-        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
-        
-        return vaml_loss
-
+    
     def loss(
         self,
         model_in: torch.Tensor,
@@ -377,12 +355,7 @@ class VAMLMLP(Ensemble):
             the model over the given input/target. If the model is an ensemble, returns
             the average over all models.
         """
-        if self.use_vaml:
-            loss = self._vaml_loss(model_in, target)
-        elif self.use_scaling:
-            loss = self._vaml_scaling_loss(model_in, target)
-        else:
-            raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+        loss = self._vaml_loss(model_in, target)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.mean()
@@ -406,15 +379,10 @@ class VAMLMLP(Ensemble):
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
         # target = target.repeat((self.num_members, 1, 1))
-        if self.use_vaml:
-            loss = self._vaml_loss(model_in, target)
-        elif self.use_scaling:
-            loss = self._vaml_scaling_loss(model_in, target)
-        else:
-            raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+        loss = self._vaml_loss(model_in, target)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
-        return loss
+        return loss.detach()
 
 
     def reset(  # type: ignore
@@ -493,5 +461,8 @@ class VAMLMLP(Ensemble):
 
         values = self._agent.critic(input, next_action.detach())
         values_target = self._agent.critic_target(input, next_action.detach())
-        all_values = torch.stack([*values, *values_target], 0)
+        if self.use_all_vf:
+            all_values = torch.stack([*values, *values_target], 0)
+        else:
+            all_values = torch.stack([*values_target], 0)
         return all_values.squeeze(1)

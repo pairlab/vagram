@@ -163,7 +163,7 @@ class Model(nn.Module, abc.ABC):
         loss = self.loss(model_in, target)
         loss.backward()
         optimizer.step()
-        return loss.item()
+        return loss.detach().item()
 
     def __len__(self):
         return 1

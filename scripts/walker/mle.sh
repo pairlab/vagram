@@ -14,11 +14,14 @@
 source ~/.bashrc
 conda activate py37
 
-export PYTHONPATH=/h/$USER/Code/project_codebases/mbrllib_vaml/mbrl-lib
+export PYTHONPATH=/h/$USER/Code/project_codebases/mbrl-lib-shadow-copy
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/nvidia/lib64
 
-cd ~/Code/project_codebases/mbrllib_vaml/mbrl-lib
+cd ~/Code/project_codebases/mbrl-lib-shadow-copy
 
 python3 -m mbrl.examples.main \
+	seed=$RANDOM \
 	algorithm=mbpo \
-	overrides=mbpo_halfcheetah \
-	root_dir=/scratch/gobi2/voelcker
+	overrides=mbpo_walker \
+	dynamics_model=gaussian_mlp_ensemble \
+	root_dir="/scratch/gobi2/voelcker/exp"
