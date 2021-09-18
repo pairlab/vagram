@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -N 1            # number of nodes on which to run
 #SBATCH --gres=gpu:1        # number of gpus
-#SBATCH -p 't4v1,t4v2,rtx6000'           # partition
+#SBATCH -p 'p100,t4v1,t4v2,rtx6000'           # partition
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
@@ -14,12 +14,19 @@
 source ~/.bashrc
 conda activate py37
 
-export PYTHONPATH=/h/$USER/Code/project_codebases/mbrllib_vaml/mbrl-lib
+export PYTHONPATH=/h/$USER/Code/project_codebases/mbrl-lib-shadow-copy
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/pkgs/mujoco200/bin:/usr/local/nvidia/lib64
+export MUJOCO_PY_MUJOCO_PATH=/pkgs/mujoco200
+export MUJOCO_PY_MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
+export MJLIB_PATH=/pkgs/mujoco200/bin/libmujoco200.so
+export MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 
-cd ~/Code/project_codebases/mbrllib_vaml/mbrl-lib
+cd ~/Code/project_codebases/mbrl-lib-shadow-copy
 
 python3 -m mbrl.examples.main \
+	seed=$RANDOM \
 	algorithm=mbpo \
 	overrides=mbpo_halfcheetah \
 	dynamics_model=gaussian_mlp_ensemble \
-	root_dir=/scratch/gobi2/voelcker
+	root_dir=/scratch/hdd001/home/voelcker/ \
+	hydra.run.dir="/scratch/hdd001/home/voelcker/$SLURM_JOB_ID"

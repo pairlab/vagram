@@ -4,6 +4,7 @@
 notebooks/.ipynb_checkpoints
 _build
 __pycache__
+exp/*
 
 # Distribution / packaging
 .Python
