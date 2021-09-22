@@ -11,12 +11,14 @@ import torch
 
 def hopper(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
     assert len(next_obs.shape) == 2
+    print(next_obs)
 
     height = next_obs[:, 0]
     angle = next_obs[:, 1]
+    print(angle)
     not_done = (
         torch.isfinite(next_obs).all(-1)
-        * (next_obs[:, 1:] < 100).abs().all(-1)
+        * (next_obs[:, 1:] < 100).float().abs().all(-1)
         * (height > 0.7)
         * (angle.abs() < 0.2)
     )

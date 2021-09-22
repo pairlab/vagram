@@ -1,17 +1,15 @@
 #!/bin/bash
 #SBATCH -N 1            # number of nodes on which to run
 #SBATCH --gres=gpu:1        # number of gpus
-#SBATCH -p 't4v1,t4v2'           # partition
+#SBATCH -p 'p100,t4v1,t4v2,rtx6000'           # partition
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
-#SBATCH --time=72:00:00      # time limit
-#SBATCH --mem=16GB         # minimum amount of real memory
+#SBATCH --time=36:00:00      # time limit
+#SBATCH --mem=32GB         # minimum amount of real memory
 #SBATCH --job-name=mle_mbrl
 #SBATCH --error=/h/voelcker/logs/vaml_train/%j.err
 #SBATCH --output=/h/voelcker/logs/vaml_train/%j.out
-#SBATCH --account=deadline
-#SBATCH --qos=deadline
 
 source ~/.bashrc
 conda activate py37
@@ -32,5 +30,4 @@ python3 -m mbrl.examples.main \
 	dynamics_model.model.num_layers=4 \
 	dynamics_model.model.hid_size=400 \
 	dynamics_model=gaussian_mlp_ensemble \
-	root_dir=/scratch/hdd001/home/voelcker/ \
-	hydra.run.dir="/scratch/hdd001/home/voelcker/$SLURM_JOB_ID"
+	hydra.run.dir="exp/$SLURM_JOB_ID"

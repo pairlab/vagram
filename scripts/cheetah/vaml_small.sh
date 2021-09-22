@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -N 1            # number of nodes on which to run
 #SBATCH --gres=gpu:1        # number of gpus
-#SBATCH -p 'p100,t4v1,t4v2,rtx6000'           # partition
+#SBATCH -p 't4v1,t4v2,rtx6000'           # partition
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
