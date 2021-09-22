@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -N 1            # number of nodes on which to run
 #SBATCH --gres=gpu:1        # number of gpus
-#SBATCH -p 't4v1,t4v2,p100'           # partition
+#SBATCH -p 'rtx6000,t4v1,t4v2,p100'           # partition
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
@@ -27,8 +27,6 @@ python3 -m mbrl.examples.main \
 	seed=$RANDOM \
 	algorithm=mbpo \
 	overrides=mbpo_hopper \
-	dynamics_model=gaussian_mlp_ensemble \
-	dynamics_model.model.num_layers=4 \
+	dynamics_model.model.num_layers=3 \
 	dynamics_model.model.hid_size=64 \
-	root_dir=/scratch/hdd001/home/voelcker/ \
-	hydra.run.dir="/scratch/hdd001/home/voelcker/$SLURM_JOB_ID"
+	hydra.run.dir="exp/$SLURM_JOB_ID"

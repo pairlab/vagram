@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
-#SBATCH --time=36:00:00      # time limit
+#SBATCH --time=72:00:00      # time limit
 #SBATCH --mem=32GB         # minimum amount of real memory
 #SBATCH --job-name=mle_mbrl
 #SBATCH --error=/h/voelcker/logs/vaml_train/%j.err

@@ -27,7 +27,6 @@ python3 -m mbrl.examples.main \
 	seed=$RANDOM \
 	algorithm=mbpo \
 	overrides=mbpo_hopper \
-	dynamics_model=gaussian_mlp_ensemble \
 	dynamics_model.model.num_layers=2 \
-	dynamics_model.model.hid_size=64 \
+	dynamics_model.model.hid_size=128 \
 	hydra.run.dir="exp/$SLURM_JOB_ID"
