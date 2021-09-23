@@ -66,11 +66,8 @@ class MetersGroup(object):
             self._csv_writer = csv.DictWriter(
                 self._csv_file, fieldnames=sorted(data.keys()), restval=0.0
             )
-            print("initializing new")
             if os.stat(self._csv_file_path).st_size == 0:
-                print("Writing header")
                 self._csv_writer.writeheader()
-        print(f"Dumping {data}")
         self._csv_writer.writerow(data)
         self._csv_file.flush()
 

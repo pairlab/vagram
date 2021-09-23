@@ -2,7 +2,7 @@
 env: "gym___Walker2d-v2"
 term_fn: "walker2d"
 
-num_steps: 300000
+num_steps: 500000
 epoch_length: 1000
 num_elites: 5
 patience: 10

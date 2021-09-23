@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+from mbrl.env.distractor_dimensions import Distractor
 from typing import Optional, Tuple, Union, cast
 
 import gym
@@ -80,6 +81,16 @@ def make_env(
             reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.reward_fn)
         else:
             reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.term_fn, None)
+    elif "dis___" in cfg.overrides.env:
+        import mbrl.env
+
+        env = gym.make(cfg.overrides.env.split("___")[1])
+        term_fn = getattr(mbrl.env.termination_fns, cfg.overrides.term_fn)
+        # if hasattr(cfg.overrides, "reward_fn") and cfg.overrides.reward_fn is not None:
+        #     reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.reward_fn)
+        # else:
+        #     reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.term_fn, None)
+        env = Distractor(env, switching=True, correlated=True)
     else:
         import mbrl.env.mujoco_envs
 
