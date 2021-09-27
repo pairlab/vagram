@@ -149,7 +149,7 @@ def train(
 
     # save all model and trainer chpts
     replay_buffer = mbrl.util.common.create_replay_buffer(
-        cfg, obs_shape, act_shape, rng=rng
+        cfg, obs_shape, act_shape, rng=rng, device=cfg.device
     )
 
     try:
@@ -271,11 +271,18 @@ def train(
                     sac_buffer
                 ) < rollout_batch_size:
                     break  # only update every once in a while
-
                 agent.actor.requires_grad = True
                 agent.critic.requires_grad = True
                 agent.critic_target.requires_grad = True
                 agent.update(sac_buffer, logger, updates_made)
+                model_data_likelihood = mbrl.util.math.truncated_linear(
+                        *(cfg.overrides.model_data_likelihood + [epoch + 1])
+                    )
+                sac_buffer_capacity = rollout_length * rollout_batch_size * trains_per_epoch
+
+                buffer = np.random.choice([0,1], p=[model_data_likelihood, 1.-model_data_likelihood])
+                buffer = [sac_buffer, replay_buffer][buffer]
+                agent.update(buffer, logger, updates_made)
                 updates_made += 1
                 if not silent and updates_made % cfg.log_frequency_agent == 0:
                     logger.dump(updates_made, save=True)

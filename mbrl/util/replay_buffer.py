@@ -7,6 +7,7 @@ import warnings
 from typing import List, Optional, Sequence, Sized, Tuple, Union
 
 import numpy as np
+import torch
 
 from mbrl.types import TransitionBatch
 
@@ -325,6 +326,7 @@ class ReplayBuffer:
         action_type=np.float32,
         rng: Optional[np.random.Generator] = None,
         max_trajectory_length: Optional[int] = None,
+        device: Optional[str] = None,
     ):
         self.cur_idx = 0
         self.capacity = capacity
@@ -347,6 +349,8 @@ class ReplayBuffer:
             self._rng = rng
 
         self._start_last_trajectory = 0
+
+        self.device = device
 
     @property
     def stores_trajectories(self) -> bool:
@@ -434,7 +438,7 @@ class ReplayBuffer:
             self.cur_idx = (self.cur_idx + 1) % self.capacity
             self.num_stored = min(self.num_stored + 1, self.capacity)
 
-    def sample(self, batch_size: int) -> TransitionBatch:
+    def sample(self, batch_size: int, sac=False) -> TransitionBatch:
         """Samples a batch of transitions from the replay buffer.
 
         Args:
@@ -446,7 +450,7 @@ class ReplayBuffer:
             to (obs[i], act[i], next_obs[i], rewards[i], dones[i]).
         """
         indices = self._rng.choice(self.num_stored, size=batch_size)
-        return self._batch_from_indices(indices)
+        return self._batch_from_indices(indices, sac=sac)
 
     def sample_trajectory(self) -> Optional[TransitionBatch]:
         """Samples a full trajectory and returns it as a batch.
@@ -464,12 +468,24 @@ class ReplayBuffer:
         )
         return self._batch_from_indices(indices)
 
-    def _batch_from_indices(self, indices: Sized) -> TransitionBatch:
+    def _batch_from_indices(self, indices: Sized, sac=False) -> TransitionBatch:
         obs = self.obs[indices]
         next_obs = self.next_obs[indices]
         action = self.action[indices]
         reward = self.reward[indices]
         done = self.done[indices]
+
+        if sac:
+            obses = torch.as_tensor(obs, device=self.device).float()
+            actions = torch.as_tensor(action, device=self.device)
+            rewards = torch.as_tensor(reward, device=self.device)
+            next_obses = torch.as_tensor(next_obs, device=self.device).float()
+            dones = torch.as_tensor(done, device=self.device)
+            not_dones = torch.logical_not(dones)
+            dones_no_max = torch.as_tensor(done, device=self.device)
+            not_dones_no_max = torch.logical_not(dones_no_max)
+
+            return obses, actions, rewards, next_obses, not_dones, not_dones_no_max
 
         return TransitionBatch(obs, action, next_obs, reward, done)
 

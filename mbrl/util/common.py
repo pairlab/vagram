@@ -134,6 +134,7 @@ def create_replay_buffer(
     load_dir: Optional[Union[str, pathlib.Path]] = None,
     collect_trajectories: bool = False,
     rng: Optional[np.random.Generator] = None,
+    device: Optional[str] = None
 ) -> ReplayBuffer:
     """Creates a replay buffer from a given configuration.
 
@@ -185,6 +186,7 @@ def create_replay_buffer(
         act_shape,
         rng=rng,
         max_trajectory_length=maybe_max_trajectory_len,
+        device = device
     )
 
     if load_dir:

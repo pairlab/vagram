@@ -64,7 +64,7 @@ class ReplayBuffer(object):
         self.idx = (self.idx + _how_many) % self.capacity
         self.full = self.full or self.idx == 0
 
-    def sample(self, batch_size):
+    def sample(self, batch_size, sac=True):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=batch_size
         )
