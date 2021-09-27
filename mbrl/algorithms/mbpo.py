@@ -271,6 +271,10 @@ def train(
                     sac_buffer
                 ) < rollout_batch_size:
                     break  # only update every once in a while
+
+                agent.actor.requires_grad = True
+                agent.critic.requires_grad = True
+                agent.critic_target.requires_grad = True
                 agent.update(sac_buffer, logger, updates_made)
                 updates_made += 1
                 if not silent and updates_made % cfg.log_frequency_agent == 0:

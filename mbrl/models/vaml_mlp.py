@@ -456,6 +456,9 @@ class VAMLMLP(Ensemble):
         self._agent = agent
 
     def values(self, input):
+        self._agent.actor.requires_grad = False
+        self._agent.critic.requires_grad = False
+        self._agent.critic_target.requires_grad = False
         dist = self._agent.actor(input)
         next_action = dist.rsample()
 
