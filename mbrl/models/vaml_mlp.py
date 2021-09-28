@@ -277,7 +277,7 @@ class VAMLMLP(Ensemble):
         pred_mean, _ = self.forward(model_in, use_propagation=False)
         return F.mse_loss(pred_mean, target, reduction="none")
 
-    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor, idx: torch.Tensor, eval: bool = False) -> torch.Tensor:
         # assert model_in.ndim == target.ndim
         if model_in.ndim == 2:  # add ensemble dimension
             model_in = model_in.unsqueeze(0)
@@ -292,14 +292,26 @@ class VAMLMLP(Ensemble):
 
         vf_pred = self.values(target[..., :-1])
         vaml_loss = 0.
+        
+        print(idx)
 
         for i, vf in enumerate(vf_pred):
-            if i == len(vf) - 1:
-                # annoying hack to prevent memory leak in the graph
-                vf.sum().backward(retain_graph=False)
+            if eval and torch.all(self.known_eval_gradients[idx]):
+                g = self.eval_gradients[idx, i].unsqueeze(0).repeat(self.num_members, 1, 1)
+            elif torch.all(self.known_gradients[idx]):
+                g = self.gradients[idx, i].unsqueeze(0).repeat(self.num_members, 1, 1)
+                print("Buffered")
             else:
-                vf.sum().backward(retain_graph=True)
-            g = target.grad.clone().detach().squeeze()[..., :-1]
+                if i == len(vf) - 1:
+                    # annoying hack to prevent memory leak in the graph
+                    vf.sum().backward(retain_graph=False)
+                else:
+                    vf.sum().backward(retain_graph=True)
+                g = target.grad.clone().detach().squeeze()[..., :-1]
+                if eval:
+                    self.eval_gradients[idx, i] = g[0]
+                else:
+                    self.gradients[idx, i] = g[0]
 
             # quantile clipping
             if self.bound_clipping:
@@ -319,8 +331,14 @@ class VAMLMLP(Ensemble):
                 raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
             self._agent.critic.zero_grad()
             self._agent.critic_target.zero_grad()
-            target.grad[:] = 0.
-        
+            if target.grad is not None:
+                target.grad[:] = 0.
+
+        if eval:
+            self.known_gradients[idx] = True        
+        else:
+            self.known_gradients[idx] = True        
+
         target.requires_grad = False
         self._agent.critic.requires_grad = True
         self._agent.critic_target.requires_grad = True
@@ -336,6 +354,8 @@ class VAMLMLP(Ensemble):
         self,
         model_in: torch.Tensor,
         target: Optional[torch.Tensor] = None,
+        idx = None,
+        eval = False
     ) -> torch.Tensor:
         """Computes Gaussian NLL loss.
 
@@ -355,13 +375,13 @@ class VAMLMLP(Ensemble):
             the model over the given input/target. If the model is an ensemble, returns
             the average over all models.
         """
-        loss = self._vaml_loss(model_in, target)
+        loss = self._vaml_loss(model_in, target, idx=idx, eval=False)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.mean()
 
     def eval_score(  # type: ignore
-        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None
+        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None
     ) -> torch.Tensor:
         """Computes the squared error for the model over the given input/target.
 
@@ -379,7 +399,7 @@ class VAMLMLP(Ensemble):
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
         # target = target.repeat((self.num_members, 1, 1))
-        loss = self._vaml_loss(model_in, target)
+        loss = self._vaml_loss(model_in, target, idx, eval=True)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.detach()
@@ -454,15 +474,38 @@ class VAMLMLP(Ensemble):
 
     def set_agent(self, agent):
         self._agent = agent
+        self.gradients[:] = 0.
+        self.eval_gradients[:] = 0.
+        self.known_gradients[:] = 0.
+        self.known_eval_gradients[:] = 0.
+
+    def set_gradient_buffer(self, obs_shape, act_shape, cfg):
+        dataset_size = (
+            cfg.algorithm.get("dataset_size", None) if "algorithm" in cfg else None
+        )
+        if not dataset_size:
+            dataset_size = cfg.overrides.num_steps
+
+        if self.use_all_vf:
+            self.gradients = torch.zeros((dataset_size, 4, obs_shape[0]), device=self.device)
+            self.eval_gradients = torch.zeros((10000, 4, obs_shape[0]), device=self.device)
+        else:
+            self.gradients = torch.zeros((dataset_size, 2, obs_shape[0]), device=self.device)
+            self.eval_gradients = torch.zeros((10000, 2, obs_shape[0]), device=self.device)
+
+        self.known_gradients = torch.zeros((dataset_size, 1), dtype=torch.bool, device=self.device)
+        self.known_eval_gradients = torch.zeros((10000, 1), dtype=torch.bool, device=self.device)
+
 
     def values(self, input):
         self._agent.actor.requires_grad = False
         self._agent.critic.requires_grad = False
         self._agent.critic_target.requires_grad = False
         dist = self._agent.actor(input)
-        next_action = dist.rsample()
+        next_action = dist.mean
 
         values = self._agent.critic(input, next_action.detach())
+
         values_target = self._agent.critic_target(input, next_action.detach())
         if self.use_all_vf:
             all_values = torch.stack([*values, *values_target], 0)

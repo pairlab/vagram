@@ -173,6 +173,7 @@ class OneDTransitionRewardModel(Model):
         self,
         batch: mbrl.types.TransitionBatch,
         target: Optional[torch.Tensor] = None,
+        idx = None
     ) -> torch.Tensor:
         """Evaluates the model score over a batch of transitions.
 
@@ -187,13 +188,14 @@ class OneDTransitionRewardModel(Model):
         """
         assert target is None
         model_in, target = self._get_model_input_and_target_from_batch(batch)
-        return self.model.loss(model_in, target=target)
+        return self.model.loss(model_in, target=target, idx=batch[1])
 
     def update(
         self,
         batch: mbrl.types.TransitionBatch,
         optimizer: torch.optim.Optimizer,
         target: Optional[torch.Tensor] = None,
+        idx=None
     ) -> float:
         """Updates the model given a batch of transitions and an optimizer.
 
@@ -202,8 +204,8 @@ class OneDTransitionRewardModel(Model):
             optimizer (torch optimizer): the optimizer to use to update the model.
         """
         assert target is None
-        model_in, target = self._get_model_input_and_target_from_batch(batch)
-        return self.model.update(model_in, optimizer, target=target)
+        model_in, target = self._get_model_input_and_target_from_batch(batch[0])
+        return self.model.update(model_in, optimizer, target=target, idx=batch[1])
 
     def eval_score(
         self,
@@ -222,8 +224,8 @@ class OneDTransitionRewardModel(Model):
             (tensor): as returned by `model.eval_score().`
         """
         assert target is None
-        model_in, target = self._get_model_input_and_target_from_batch(batch)
-        return self.model.eval_score(model_in, target=target)
+        model_in, target = self._get_model_input_and_target_from_batch(batch[0])
+        return self.model.eval_score(model_in, target=target, idx=batch[1])
 
     def get_output_and_targets(
         self, batch: mbrl.types.TransitionBatch
