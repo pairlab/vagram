@@ -90,7 +90,7 @@ def make_env(
         #     reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.reward_fn)
         # else:
         #     reward_fn = getattr(mbrl.env.reward_fns, cfg.overrides.term_fn, None)
-        env = Distractor(env, dimensions=20, switching=True, correlated=False, linear=False)
+        env = Distractor(env, dimensions=15, switching=True, correlated=False, linear=False)
     else:
         import mbrl.env.mujoco_envs
 

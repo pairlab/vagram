@@ -485,13 +485,13 @@ class VAMLMLP(Ensemble):
 
         if self.use_all_vf:
             self.gradients = torch.zeros((dataset_size, 4, obs_shape[0]), device=self.device)
-            self.eval_gradients = torch.zeros((10000, 4, obs_shape[0]), device=self.device)
+            self.eval_gradients = torch.zeros((dataset_size, 4, obs_shape[0]), device=self.device)
         else:
             self.gradients = torch.zeros((dataset_size, 2, obs_shape[0]), device=self.device)
-            self.eval_gradients = torch.zeros((10000, 2, obs_shape[0]), device=self.device)
+            self.eval_gradients = torch.zeros((dataset_size, 2, obs_shape[0]), device=self.device)
 
         self.known_gradients = torch.zeros((dataset_size, 1), dtype=torch.bool, device=self.device)
-        self.known_eval_gradients = torch.zeros((10000, 1), dtype=torch.bool, device=self.device)
+        self.known_eval_gradients = torch.zeros((dataset_size, 1), dtype=torch.bool, device=self.device)
 
 
     def values(self, input):

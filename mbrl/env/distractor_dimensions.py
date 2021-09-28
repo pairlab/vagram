@@ -5,7 +5,7 @@ from gym.spaces import Box
 
 class Distractor(ObservationWrapper):
 
-    def __init__(self, env, dimensions=10, linear=True, switching=False, correlated=True):
+    def __init__(self, env, dimensions=5, linear=True, switching=False, correlated=False):
         super().__init__(env)
         self.dimensions = dimensions
         self.linear = linear
