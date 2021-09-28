@@ -204,6 +204,7 @@ def train(
     )
     if type(dynamics_model.model) == VAMLMLP:
         print("Adding agent")
+        dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
         dynamics_model.model.set_agent(agent)
         # add mse for first epoch
         dynamics_model.model.add_mse = True
@@ -237,6 +238,10 @@ def train(
 
             # --------------- Model Training -----------------
             if (env_steps + 1) % cfg.overrides.freq_train_model == 0:
+                if type(dynamics_model.model) == VAMLMLP:
+                    print("Adding agent")
+                    dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
+                    dynamics_model.model.set_agent(agent)
                 mbrl.util.common.train_model_and_save_model_and_data(
                     dynamics_model,
                     model_trainer,

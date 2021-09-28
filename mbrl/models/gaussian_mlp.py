@@ -23,7 +23,7 @@ class GaussianMLP(Ensemble):
     This model corresponds to a Probabilistic Ensemble in the Chua et al.,
     NeurIPS 2018 paper (PETS) https://arxiv.org/pdf/1805.12114.pdf
 
-    It predicts per output mean and log variance, and its weights are updated using a Gaussian
+    It predicts per output mean and log variance, and its weights are ample dated using a Gaussian
     negative log likelihood loss. The log variance is bounded between learned ``min_log_var``
     and ``max_log_var`` parameters, trained as explained in Appendix A.1 of the paper.
 
@@ -295,6 +295,7 @@ class GaussianMLP(Ensemble):
         self,
         model_in: torch.Tensor,
         target: Optional[torch.Tensor] = None,
+        idx = None
     ) -> torch.Tensor:
         """Computes Gaussian NLL loss.
 
@@ -321,7 +322,7 @@ class GaussianMLP(Ensemble):
         return loss
 
     def eval_score(  # type: ignore
-        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None
+        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None
     ) -> torch.Tensor:
         """Computes the squared error for the model over the given input/target.
 
@@ -338,6 +339,7 @@ class GaussianMLP(Ensemble):
         Returns:
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
+        print(model_in)
         assert model_in.ndim == 2 and target.ndim == 2
         with torch.no_grad():
             pred_mean, _ = self.forward(model_in, use_propagation=False)

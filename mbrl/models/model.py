@@ -92,6 +92,7 @@ class Model(nn.Module, abc.ABC):
         self,
         model_in: ModelInput,
         target: Optional[torch.Tensor] = None,
+        idx  = None
     ) -> torch.Tensor:
         """Computes a loss that can be used to update the model using backpropagation.
 
@@ -106,7 +107,7 @@ class Model(nn.Module, abc.ABC):
 
     @abc.abstractmethod
     def eval_score(
-        self, model_in: ModelInput, target: Optional[torch.Tensor] = None
+        self, model_in: ModelInput, target: Optional[torch.Tensor] = None, idx: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Computes an evaluation score for the model over the given input/target.
 
@@ -132,9 +133,10 @@ class Model(nn.Module, abc.ABC):
 
     def update(
         self,
-        model_in: ModelInput,
+        batch: ModelInput,
         optimizer: torch.optim.Optimizer,
         target: Optional[torch.Tensor] = None,
+        idx = None
     ) -> float:
         """Updates the model using backpropagation with given input and target tensors.
 
@@ -160,7 +162,7 @@ class Model(nn.Module, abc.ABC):
         optimizer = cast(torch.optim.Optimizer, optimizer)
         self.train()
         optimizer.zero_grad()
-        loss = self.loss(model_in, target)
+        loss = self.loss(batch, target=target, idx=idx)
         loss.backward()
         optimizer.step()
         return loss.detach().item()

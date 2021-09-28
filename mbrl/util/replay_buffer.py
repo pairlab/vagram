@@ -84,7 +84,8 @@ class TransitionIterator:
         return self
 
     def __next__(self):
-        return self[self._get_indices_next_batch()]
+        idx = self._get_indices_next_batch()
+        return self[(idx)], idx
 
     def ensemble_size(self):
         return 0
@@ -166,7 +167,7 @@ class BootstrapIterator(TransitionIterator):
         for member_idx in self.member_indices:
             content_indices = member_idx[indices]
             batches.append(self[content_indices])
-        return _consolidate_batches(batches)
+        return _consolidate_batches(batches), indices
 
     def toggle_bootstrap(self):
         """Toggles whether the iterator returns a batch per model or a single batch."""
