@@ -155,16 +155,27 @@ def train(
     try:
         with open(os.path.join(work_dir, "epoch.txt"), "r") as f:
             epoch = int(f.read())
+        reloaded = True
     except FileNotFoundError as e:
         epoch = 0
-
-    if epoch > 0:
+        reloaded = False
+    
+    model_env = mbrl.models.ModelEnv(
+        env, dynamics_model, termination_fn, None, generator=torch_generator
+    )
+    model_trainer = mbrl.models.ModelTrainer(
+        dynamics_model,
+        optim_lr=cfg.overrides.model_lr,
+        weight_decay=cfg.overrides.model_wd,
+        logger=None if silent else logger,
+    )
+    if reloaded:
+        print("\n\nLoading from disk\n\n")
         replay_buffer.load(work_dir)
         dynamics_model.load(work_dir)
-        critic_weights = torch.load(os.path.join(work_dir, "critic.pth"))
-        agent.critic.load_state_dict(critic_weights)
-        actor_weights = torch.load(os.path.join(work_dir, "actor.pth"))
-        agent.actor.load_state_dict(actor_weights)
+        agent.load(work_dir)
+        optim_model_weights = torch.load(os.path.join(work_dir, "model_optim.pth"))
+        model_trainer.optimizer.load_state_dict(optim_model_weights)
     else:
         random_explore = cfg.algorithm.random_initial_explore
         mbrl.util.common.rollout_agent_trajectories(
@@ -176,12 +187,18 @@ def train(
         )
         replay_buffer.save(work_dir)
         dynamics_model.save(work_dir)
-        torch.save(
-            agent.critic.state_dict(), os.path.join(work_dir, "critic.pth")
-        )
-        torch.save(
-            agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
-        )
+        agent.save(work_dir)
+        torch.save(model_trainer.optimizer.state_dict(), os.path.join(work_dir, "model_optim.pth"))
+        with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
+            f.write(str(epoch))
+    
+    if type(dynamics_model.model) == VAMLMLP:
+        print("Adding agent")
+        dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
+        dynamics_model.model.set_agent(agent)
+        # add mse for first epoch
+        dynamics_model.model.add_mse = True
+
 
     # ---------------------------------------------------------
     # --------------------- Training Loop ---------------------
@@ -193,21 +210,6 @@ def train(
     )
     updates_made = epoch * cfg.overrides.epoch_length * cfg.overrides.num_sac_updates_per_step
     env_steps = epoch * cfg.overrides.epoch_length
-    model_env = mbrl.models.ModelEnv(
-        env, dynamics_model, termination_fn, None, generator=torch_generator
-    )
-    model_trainer = mbrl.models.ModelTrainer(
-        dynamics_model,
-        optim_lr=cfg.overrides.model_lr,
-        weight_decay=cfg.overrides.model_wd,
-        logger=None if silent else logger,
-    )
-    if type(dynamics_model.model) == VAMLMLP:
-        print("Adding agent")
-        dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
-        dynamics_model.model.set_agent(agent)
-        # add mse for first epoch
-        dynamics_model.model.add_mse = True
 
     best_eval_reward = -np.inf
     sac_buffer = None
@@ -308,12 +310,7 @@ def train(
                 )
                 video_recorder.save(f"{epoch}.mp4")
                 best_eval_reward = avg_reward
-                torch.save(
-                    agent.critic.state_dict(), os.path.join(work_dir, "critic.pth")
-                )
-                torch.save(
-                    agent.actor.state_dict(), os.path.join(work_dir, "actor.pth")
-                )
+                agent.save(work_dir)
                 epoch += 1
                 with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
                     f.write(str(epoch))

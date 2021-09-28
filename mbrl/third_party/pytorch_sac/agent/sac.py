@@ -1,3 +1,4 @@
+import os
 import pathlib
 
 import hydra
@@ -164,8 +165,35 @@ class SACAgent(Agent):
             utils.soft_update_params(self.critic, self.critic_target, self.critic_tau)
 
     def save(self, save_dir):
-        critic_path = save_dir / "critic.pth"
-        actor_path = save_dir / "actor.pth"
+        critic_path = os.path.join(save_dir, "critic.pth")
+        critic_target_path = os.path.join(save_dir, "critic_target.pth")
+        actor_path = os.path.join(save_dir, "actor.pth")
 
         torch.save(self.critic.state_dict(), critic_path)
+        torch.save(self.critic_target.state_dict(), critic_target_path)
         torch.save(self.actor.state_dict(), actor_path)
+
+        actor_optim_path = os.path.join(save_dir, "actor_optim.pth")
+        critic_optim_path = os.path.join(save_dir, "critic_optim.pth")
+        alpha_optim_path = os.path.join(save_dir, "alpha_optim.pth")
+        
+        torch.save(self.actor_optimizer.state_dict(), actor_optim_path)
+        torch.save(self.critic_optimizer.state_dict(), critic_optim_path)
+        torch.save(self.log_alpha_optimizer.state_dict(), alpha_optim_path)
+
+    def load(self, save_dir):
+        critic_path = os.path.join(save_dir, "critic.pth")
+        critic_target_path = os.path.join(save_dir, "critic_target.pth")
+        actor_path = os.path.join(save_dir, "actor.pth")
+
+        self.critic.load_state_dict(torch.load(critic_path))
+        self.critic_target.load_state_dict(torch.load(critic_target_path))
+        self.actor.load_state_dict(torch.load(actor_path))
+        
+        actor_optim_path = os.path.join(save_dir, "actor_optim.pth")
+        critic_optim_path = os.path.join(save_dir, "critic_optim.pth")
+        alpha_optim_path = os.path.join(save_dir, "alpha_optim.pth")
+        
+        self.actor_optimizer.load_state_dict(torch.load(actor_optim_path))
+        self.critic_optimizer.load_state_dict(torch.load(critic_optim_path))
+        self.log_alpha_optimizer.load_state_dict(torch.load(alpha_optim_path))

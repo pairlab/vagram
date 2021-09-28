@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import os
 import pathlib
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -9,6 +10,7 @@ import gym.wrappers
 import hydra
 import numpy as np
 import omegaconf
+import torch
 
 import mbrl.models
 import mbrl.planning
@@ -373,7 +375,8 @@ def train_model_and_save_model_and_data(
     )
     if work_dir is not None:
         model.save(str(work_dir))
-        replay_buffer.save(work_dir)
+        replay_buffer.save(str(work_dir))
+        torch.save(model_trainer.optimizer.state_dict(), os.path.join(work_dir, "model_optim.pth"))
 
 
 def rollout_model_env(
