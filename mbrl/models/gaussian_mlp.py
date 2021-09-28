@@ -339,7 +339,6 @@ class GaussianMLP(Ensemble):
         Returns:
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
-        print(model_in)
         assert model_in.ndim == 2 and target.ndim == 2
         with torch.no_grad():
             pred_mean, _ = self.forward(model_in, use_propagation=False)

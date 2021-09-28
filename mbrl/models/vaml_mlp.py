@@ -293,14 +293,11 @@ class VAMLMLP(Ensemble):
         vf_pred = self.values(target[..., :-1])
         vaml_loss = 0.
         
-        print(idx)
-
         for i, vf in enumerate(vf_pred):
             if eval and torch.all(self.known_eval_gradients[idx]):
                 g = self.eval_gradients[idx, i].unsqueeze(0).repeat(self.num_members, 1, 1)
             elif torch.all(self.known_gradients[idx]):
                 g = self.gradients[idx, i].unsqueeze(0).repeat(self.num_members, 1, 1)
-                print("Buffered")
             else:
                 if i == len(vf) - 1:
                     # annoying hack to prevent memory leak in the graph
