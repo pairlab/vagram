@@ -5,23 +5,21 @@
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
-#SBATCH --time=36:00:00      # time limit
-#SBATCH --mem=8GB         # minimum amount of real memory
+#SBATCH --time=72:00:00      # time limit
+#SBATCH --mem=16GB         # minimum amount of real memory
 #SBATCH --job-name=mle_mbrl
-#SBATCH --error=/h/voelcker/logs/vaml_train/%j.err
-#SBATCH --output=/h/voelcker/logs/vaml_train/%j.out
 
 source ~/.bashrc
-conda activate py37
+conda activate ClaasICLR
 
-export PYTHONPATH=/h/$USER/Code/project_codebases/mbrl-lib-shadow-copy
+export PYTHONPATH=/h/$USER/mbrl-lib-iclr
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/pkgs/mujoco200/bin:/usr/local/nvidia/lib64
 export MUJOCO_PY_MUJOCO_PATH=/pkgs/mujoco200
 export MUJOCO_PY_MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 export MJLIB_PATH=/pkgs/mujoco200/bin/libmujoco200.so
 export MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 
-cd ~/Code/project_codebases/mbrl-lib-shadow-copy
+cd ~/mbrl-lib-iclr
 
 python3 -m mbrl.examples.main \
 	seed=$RANDOM \
@@ -30,4 +28,4 @@ python3 -m mbrl.examples.main \
 	dynamics_model=gaussian_mlp_ensemble \
 	dynamics_model.model.num_layers=2 \
 	dynamics_model.model.hid_size=64 \
-	hydra.run.dir="exp/$SLURM_JOB_ID"
+	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"

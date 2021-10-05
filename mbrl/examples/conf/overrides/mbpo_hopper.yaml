@@ -2,7 +2,7 @@
 env: "gym___Hopper-v2"
 term_fn: "hopper"
 
-num_steps: 125000
+num_steps: 250000
 epoch_length: 1000
 num_elites: 5
 patience: 10

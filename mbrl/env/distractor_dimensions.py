@@ -5,11 +5,12 @@ from gym.spaces import Box
 
 class Distractor(ObservationWrapper):
 
-    def __init__(self, env, dimensions=5, linear=True, switching=False, correlated=False):
+    def __init__(self, env, dimensions=5, linear=True, switching=False, correlated=False, pure_noise=False):
         super().__init__(env)
         self.dimensions = dimensions
         self.linear = linear
         self.switching = switching
+        self.pure_noise = pure_noise
 
         obs_space = env.observation_space
         low = np.concatenate((obs_space.low, np.array([-1 * np.inf] * dimensions)), -1)
@@ -32,6 +33,9 @@ class Distractor(ObservationWrapper):
         
         if self.switching:
             self.distractor_state = np.where(np.abs(self.distractor_state) > 20., self.reset_switching, self.distractor_state)
+
+        if self.pure_noise:
+            self.distractor_state = np.random.normal(0, 1., size=(self.dimensions,))
 
         return np.concatenate((obs, self.distractor_state), 0).astype(np.float)
 

@@ -94,7 +94,8 @@ def make_env(
                 dimensions=cfg.overrides.distraction_dimensions, 
                 switching=True, 
                 correlated=False, 
-                linear=False)
+                linear=False,
+                pure_noise=cfg.overrides.pure_noise_distraction)
     else:
         import mbrl.env.mujoco_envs
 
