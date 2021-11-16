@@ -1,0 +1,55 @@
+env: gym___Humanoid-v2
+experiment: test_exp
+num_train_steps: 1000000.0
+replay_buffer_capacity: ${num_train_steps}
+num_seed_steps: 5000
+eval_frequency: 10000
+num_eval_episodes: 10
+device: cuda
+log_frequency: 10000
+log_save_tb: true
+save_video: true
+seed: 1
+exp_name: default
+agent:
+  _target_: pytorch_sac.agent.sac.SACAgent
+  obs_dim: ???
+  action_dim: ???
+  action_range: ???
+  device: ${device}
+  critic_cfg: ${double_q_critic}
+  actor_cfg: ${diag_gaussian_actor}
+  discount: 0.99
+  init_temperature: 0.1
+  alpha_lr: 0.0001
+  alpha_betas:
+  - 0.9
+  - 0.999
+  actor_lr: 0.0001
+  actor_betas:
+  - 0.9
+  - 0.999
+  actor_update_frequency: 1
+  critic_lr: 0.0001
+  critic_betas:
+  - 0.9
+  - 0.999
+  critic_tau: 0.005
+  critic_target_update_frequency: 2
+  batch_size: 1024
+  learnable_temperature: true
+double_q_critic:
+  _target_: pytorch_sac.agent.critic.DoubleQCritic
+  obs_dim: ${agent.obs_dim}
+  action_dim: ${agent.action_dim}
+  hidden_dim: 1024
+  hidden_depth: 2
+diag_gaussian_actor:
+  _target_: pytorch_sac.agent.actor.DiagGaussianActor
+  obs_dim: ${agent.obs_dim}
+  action_dim: ${agent.action_dim}
+  hidden_depth: 2
+  hidden_dim: 1024
+  log_std_bounds:
+  - -5
+  - 2

@@ -1,5 +1,6 @@
 # @package _group_
-env: "humanoid_truncated_obs"
+env: "dmcontrol___humanoid--walk"
+term_fn: "humanoid"
 
 num_steps: 300000
 epoch_length: 1000
@@ -12,6 +13,7 @@ validation_ratio: 0.2
 freq_train_model: 250
 effective_model_rollouts_per_step: 400
 rollout_schedule: [20, 300, 1, 5]
+model_data_likelihood: [0, 50, 0.2, 0.95]
 num_sac_updates_per_step: 20
 sac_updates_every_steps: 1
 num_epochs_to_retain_sac_buffer: 5

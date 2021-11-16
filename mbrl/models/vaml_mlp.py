@@ -509,3 +509,29 @@ class VAMLMLP(Ensemble):
         else:
             all_values = torch.stack([*values_target], 0)
         return all_values.squeeze(1)
+
+
+class ValueWeightedModel(VAMLMLP):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor, idx: torch.Tensor, eval: bool = False) -> torch.Tensor:
+        # assert model_in.ndim == target.ndim
+        if model_in.ndim == 2:  # add ensemble dimension
+            model_in = model_in.unsqueeze(0)
+            target = target.unsqueeze(0)
+        pred_mean, _ = self.forward(model_in, use_propagation=False)
+        if target.shape[0] != self.num_members:
+            target = target.repeat(self.num_members, 1, 1)
+        
+        vf_pred = self.values(target[..., :-1])
+        vf_weighing = torch.abs(vf_pred).mean(0) / torch.sum(torch.abs(vf_pred))
+        vf_weighing = vf_weighing.detach()
+        vaml_loss = 0.
+        
+        vaml_loss += vf_weighing * ((pred_mean[..., :-1] - target[..., :-1]) ** 2)
+
+        # reward component
+        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
+        
+        return vaml_loss

@@ -1,3 +1,4 @@
+import mujoco_py
 import gym
 from gym.envs.registration import register
 

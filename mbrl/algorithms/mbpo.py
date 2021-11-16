@@ -99,8 +99,9 @@ def maybe_replace_sac_buffer(
             sac_buffer.actions[:n],
             sac_buffer.rewards[:n],
             sac_buffer.next_obses[:n],
-            np.logical_not(sac_buffer.not_dones[:n]),
-            np.logical_not(sac_buffer.not_dones_no_max[:n]),
+            torch.logical_not(sac_buffer.not_dones[:n]),
+            torch.logical_not(sac_buffer.not_dones_no_max[:n]),
+            from_np=False
         )
         return new_buffer
     return sac_buffer
@@ -154,10 +155,10 @@ def train(
 
     try:
         with open(os.path.join(work_dir, "epoch.txt"), "r") as f:
-            epoch = int(f.read())
+            env_steps = int(f.read())
         reloaded = True
     except FileNotFoundError as e:
-        epoch = 0
+        env_steps = 0
         reloaded = False
     
     model_env = mbrl.models.ModelEnv(
@@ -176,6 +177,8 @@ def train(
         agent.load(work_dir)
         optim_model_weights = torch.load(os.path.join(work_dir, "model_optim.pth"))
         model_trainer.optimizer.load_state_dict(optim_model_weights)
+        sac_buffer = pytorch_sac.ReplayBuffer(obs_shape, act_shape, 0, torch.device(cfg.device))
+        sac_buffer.load(work_dir)
     else:
         random_explore = cfg.algorithm.random_initial_explore
         mbrl.util.common.rollout_agent_trajectories(
@@ -190,10 +193,10 @@ def train(
         agent.save(work_dir)
         torch.save(model_trainer.optimizer.state_dict(), os.path.join(work_dir, "model_optim.pth"))
         with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
-            f.write(str(epoch))
+            f.write(str(env_steps))
+        sac_buffer = None
     
-    if type(dynamics_model.model) == VAMLMLP:
-        print("Adding agent")
+    if isinstance(dynamics_model.model, VAMLMLP):
         dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
         dynamics_model.model.set_agent(agent)
         # add mse for first epoch
@@ -208,11 +211,11 @@ def train(
     trains_per_epoch = int(
         np.ceil(cfg.overrides.epoch_length / cfg.overrides.freq_train_model)
     )
-    updates_made = epoch * cfg.overrides.epoch_length * cfg.overrides.num_sac_updates_per_step
-    env_steps = epoch * cfg.overrides.epoch_length
+    updates_made = env_steps * cfg.overrides.num_sac_updates_per_step
+    epoch = env_steps // cfg.overrides.epoch_length
 
     best_eval_reward = -np.inf
-    sac_buffer = None
+
     while env_steps < cfg.overrides.num_steps:
         print(env_steps)
         rollout_length = int(
@@ -240,7 +243,7 @@ def train(
 
             # --------------- Model Training -----------------
             if (env_steps + 1) % cfg.overrides.freq_train_model == 0:
-                if type(dynamics_model.model) == VAMLMLP:
+                if isinstance(dynamics_model.model, VAMLMLP):
                     print("Adding agent")
                     dynamics_model.model.set_gradient_buffer(obs_shape, act_shape, cfg)
                     dynamics_model.model.set_agent(agent)
@@ -251,6 +254,10 @@ def train(
                     replay_buffer,
                     work_dir=work_dir,
                 )
+                agent.save(work_dir)
+                sac_buffer.save(work_dir)
+                with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
+                    f.write(str(env_steps))
 
                 # --------- Rollout new model and store imagined trajectories --------
                 # Batch all rollouts for the next freq_train_model steps together
@@ -280,17 +287,18 @@ def train(
                     break  # only update every once in a while
                 agent.actor.requires_grad = True
                 agent.critic.requires_grad = True
-                agent.critic_target.requires_grad = True
-                agent.update(sac_buffer, logger, updates_made)
                 model_data_likelihood = mbrl.util.math.truncated_linear(
                         *(cfg.overrides.model_data_likelihood + [epoch + 1])
                     )
                 sac_buffer_capacity = rollout_length * rollout_batch_size * trains_per_epoch
 
-                buffer = np.random.choice([0,1], p=[model_data_likelihood, 1.-model_data_likelihood])
-                buffer = [sac_buffer, replay_buffer][buffer]
-                agent.update(buffer, logger, updates_made)
+                buffer_choice = np.random.choice([False, True], p=[model_data_likelihood, 1.-model_data_likelihood])
+                if buffer_choice:
+                    agent.update(replay_buffer, logger, updates_made)
+                else:
+                    agent.update(sac_buffer, logger, updates_made)
                 updates_made += 1
+
                 if not silent and updates_made % cfg.log_frequency_agent == 0:
                     logger.dump(updates_made, save=True)
 
@@ -310,12 +318,9 @@ def train(
                 )
                 video_recorder.save(f"{epoch}.mp4")
                 best_eval_reward = avg_reward
-                agent.save(work_dir)
                 epoch += 1
-                with open(os.path.join(work_dir, "epoch.txt"), "w") as f:
-                    f.write(str(epoch))
 
-                if type(dynamics_model.model) == VAMLMLP:
+                if isinstance(dynamics_model.model, VAMLMLP):
                     dynamics_model.model.add_mse = False
 
             env_steps += 1
