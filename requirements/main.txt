@@ -8,3 +8,5 @@ gym==0.17.2
 jupyter>=1.0.0
 pytest>=6.0.1
 sk-video>=1.1.10
+torch==1.11.0
+mujoco-py==2.1.2.14
