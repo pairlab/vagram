@@ -9,6 +9,55 @@
 This is the official code for VAGRAM published at ICLR 2022.  
 The code framework builds on [MBRL-lib](https://github.com/facebookresearch/mbrl-lib)
 
+### Experiments
+
+To run the experiments presented in the paper, install the required libraries found in `requirements.txt` and use the `vagram/mbrl/examples/main.py` script provided by mbrl-lib.
+
+The exact settings for the hopper experiments can be found in `vagram/scripts`:
+
+Distraction (2nd cmd parameter sets the number of distracting dimensions):
+```
+python3 -m mbrl.examples.main \
+	seed=$1 \
+	algorithm=mbpo \
+	overrides=mbpo_hopper_distraction \
+	overrides.num_steps=500000 \
+	overrides.model_batch_size=1024 \
+	overrides.distraction_dimensions=$2 \
+	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+```
+
+Reduced model size (num_layers sets the model size):
+```
+python3 -m mbrl.examples.main \
+	seed=$RANDOM \
+	algorithm=mbpo \
+	overrides=mbpo_hopper \
+	dynamics_model.model.num_layers=3 \
+	dynamics_model.model.hid_size=64 \
+	overrides.model_batch_size=1024 \
+	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+```
+
+To use MSE/MLE instead of VaGraM, run:
+
+```
+python3 -m mbrl.examples.main \
+	seed=$1 \
+	algorithm=mbpo \
+	overrides=mbpo_hopper_distraction \
+	overrides.num_steps=500000 \
+	overrides.model_batch_size=256 \
+	dynamics_model=gaussian_mlp_ensemble \
+	overrides.distraction_dimensions=$2 \
+	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+```
+
+### Using VaGraM
+
+The core implementation of the VaGraM algorithm can be found in `vagram/mbrl/models/vaml_mlp.py`. The code offers three variants, one for IterVAML, on for the unbounded VaGraM objective and finally the bounded VaGraM objective used in the paper. THe default configuration used in all experiments can be found in `vagram/mbrl/examples/conf/dynamics_model/vaml_ensemble.yaml`.
+
+In addition to the implementation details in the paper, we introduced a cache for the computed value function gradients. This does not change any detail of the optimization, but saves gradients of the state samples until the value function is updated for faster computation.
 
 ## Citing
 If you use this project in your research, please cite:
