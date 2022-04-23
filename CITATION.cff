@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite our paper at ICLR."
+authors:
+- family-names: "Voelcker"
+  given-names: "Claas"
+- family-names: "Liao"
+  given-names: "Victor"
+- family-names: "Garg"
+  given-names: "Animesh"
+- family-names: "Farahmand"
+  given-names: "Amir-massoud"
+title: "vagram"
+license: "MIT"
+url: "https://github.com/pairlab/vagram"
+preferred-citation:
+  type: conference-paper
+  authors:
+  - family-names: "Voelcker"
+    given-names: "Claas"
+  - family-names: "Liao"
+    given-names: "Victor"
+  - family-names: "Garg"
+    given-names: "Animesh"
+  - family-names: "Farahmand"
+    given-names: "Amir-massoud"
+  collection-title: "International Conference on Learning Representations (ICLR)"
+  title: "Value Gradient weighted Model-Based Reinforcement Learning"
+  year: 2022
+  url: "https://openreview.net/forum?id=4-D6CZkRXxI"
