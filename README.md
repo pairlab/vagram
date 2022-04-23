@@ -23,8 +23,7 @@ python3 -m mbrl.examples.main \
 	overrides=mbpo_hopper_distraction \
 	overrides.num_steps=500000 \
 	overrides.model_batch_size=1024 \
-	overrides.distraction_dimensions=$2 \
-	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+	overrides.distraction_dimensions=$2
 ```
 
 Reduced model size (num_layers sets the model size):
@@ -35,8 +34,7 @@ python3 -m mbrl.examples.main \
 	overrides=mbpo_hopper \
 	dynamics_model.model.num_layers=3 \
 	dynamics_model.model.hid_size=64 \
-	overrides.model_batch_size=1024 \
-	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+	overrides.model_batch_size=1024
 ```
 
 To use MSE/MLE instead of VaGraM, run:
@@ -49,8 +47,7 @@ python3 -m mbrl.examples.main \
 	overrides.num_steps=500000 \
 	overrides.model_batch_size=256 \
 	dynamics_model=gaussian_mlp_ensemble \
-	overrides.distraction_dimensions=$2 \
-	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+	overrides.distraction_dimensions=$2
 ```
 
 ### Using VaGraM
