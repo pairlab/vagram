@@ -26,7 +26,6 @@ python3 -m mbrl.examples.main \
 	algorithm=mbpo \
 	overrides=mbpo_hopper_distraction \
 	overrides.num_steps=500000 \
-	overrides.model_batch_size=256 \
 	dynamics_model=gaussian_mlp_ensemble \
 	overrides.distraction_dimensions=$2 \
-	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+	hydra.run.dir="/checkpoint/voelcker/$SLURM_JOB_ID"
