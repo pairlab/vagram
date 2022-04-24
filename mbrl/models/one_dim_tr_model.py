@@ -6,6 +6,7 @@ import pathlib
 import pickle
 import warnings
 from typing import List, Optional, Sequence, Tuple, Union
+from mbrl.models.vaml_mlp import VAMLMLP
 
 import numpy as np
 import torch
@@ -122,7 +123,7 @@ class OneDTransitionRewardModel(Model):
 
     def _get_model_input_and_target_from_batch(
         self, batch: mbrl.types.TransitionBatch
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         obs, action, next_obs, reward, _ = batch.astuple()
         if self.target_is_delta:
             target_obs = next_obs - obs
@@ -141,7 +142,7 @@ class OneDTransitionRewardModel(Model):
             ).to(self.device)
         else:
             target = torch.from_numpy(target_obs).to(self.device)
-        return model_in, target
+        return model_in, target, next_obs
 
     def forward(self, x: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, ...]:
         """Calls forward method of base model with the given input and args."""
@@ -173,7 +174,7 @@ class OneDTransitionRewardModel(Model):
         self,
         batch: mbrl.types.TransitionBatch,
         target: Optional[torch.Tensor] = None,
-        idx = None
+        idx=None,
     ) -> torch.Tensor:
         """Evaluates the model score over a batch of transitions.
 
@@ -195,7 +196,7 @@ class OneDTransitionRewardModel(Model):
         batch: mbrl.types.TransitionBatch,
         optimizer: torch.optim.Optimizer,
         target: Optional[torch.Tensor] = None,
-        idx=None
+        idx=None,
     ) -> float:
         """Updates the model given a batch of transitions and an optimizer.
 
@@ -204,7 +205,13 @@ class OneDTransitionRewardModel(Model):
             optimizer (torch optimizer): the optimizer to use to update the model.
         """
         assert target is None
-        model_in, target = self._get_model_input_and_target_from_batch(batch[0])
+        model_in, target, next_obs = self._get_model_input_and_target_from_batch(
+            batch[0]
+        )
+        if isinstance(self.model, VAMLMLP):
+            return self.model.update(
+                model_in, optimizer, target=target, idx=batch[1], next_obs=next_obs
+            )
         return self.model.update(model_in, optimizer, target=target, idx=batch[1])
 
     def eval_score(
