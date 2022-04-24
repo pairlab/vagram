@@ -142,7 +142,7 @@ class OneDTransitionRewardModel(Model):
             ).to(self.device)
         else:
             target = torch.from_numpy(target_obs).to(self.device)
-        return model_in, target, next_obs
+        return model_in, target, torch.Tensor(next_obs).to(self.device)
 
     def forward(self, x: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, ...]:
         """Calls forward method of base model with the given input and args."""
@@ -188,7 +188,7 @@ class OneDTransitionRewardModel(Model):
             (tensor): as returned by `model.eval_score().`
         """
         assert target is None
-        model_in, target = self._get_model_input_and_target_from_batch(batch)
+        model_in, target, _ = self._get_model_input_and_target_from_batch(batch)
         return self.model.loss(model_in, target=target, idx=batch[1])
 
     def update(
@@ -231,7 +231,11 @@ class OneDTransitionRewardModel(Model):
             (tensor): as returned by `model.eval_score().`
         """
         assert target is None
-        model_in, target = self._get_model_input_and_target_from_batch(batch[0])
+        model_in, target, next_obs = self._get_model_input_and_target_from_batch(batch[0])
+        if isinstance(self.model, VAMLMLP):
+            return self.model.eval_score(
+                model_in, target=target, idx=batch[1], next_obs=next_obs
+            )
         return self.model.eval_score(model_in, target=target, idx=batch[1])
 
     def get_output_and_targets(
@@ -250,7 +254,7 @@ class OneDTransitionRewardModel(Model):
             (tuple(tensor), tensor): the model outputs and the target for this batch.
         """
         with torch.no_grad():
-            model_in, target = self._get_model_input_and_target_from_batch(batch)
+            model_in, target, _ = self._get_model_input_and_target_from_batch(batch)
             output = self.model.forward(model_in)
         return output, target
 

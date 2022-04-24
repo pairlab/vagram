@@ -22,10 +22,9 @@ export MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 cd ~/mbrl-lib-iclr
 
 python3 -m mbrl.examples.main \
-	seed=$RANDOM \
+	seed=$1 \
 	algorithm=mbpo \
 	overrides=mbpo_hopper \
 	dynamics_model.model.num_layers=3 \
 	dynamics_model.model.hid_size=64 \
-	overrides.model_batch_size=1024 \
 	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"

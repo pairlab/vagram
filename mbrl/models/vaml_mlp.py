@@ -305,12 +305,12 @@ class VAMLMLP(Ensemble):
             elif torch.all(self.known_gradients[idx]):
                 g = self.gradients[idx, i].unsqueeze(0)
             else:
-                if i == len(vf) - 1:
+                if i == len(vf_pred) - 1:
                     # annoying hack to prevent memory leak in the graph
                     vf.sum().backward(retain_graph=False)
                 else:
                     vf.sum().backward(retain_graph=True)
-                g = target.grad.clone().detach().squeeze()[..., :-1]
+                g = next_obs.grad.clone().detach().squeeze()
                 if eval:
                     self.eval_gradients[idx, i] = g[0]
                 else:
@@ -433,7 +433,7 @@ class VAMLMLP(Ensemble):
         return loss.detach().item()
 
     def eval_score(  # type: ignore
-        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None
+        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None, next_obs=None
     ) -> torch.Tensor:
         """Computes the squared error for the model over the given input/target.
 
@@ -451,7 +451,7 @@ class VAMLMLP(Ensemble):
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
         # target = target.repeat((self.num_members, 1, 1))
-        loss = self._vaml_loss(model_in, target, idx, eval=True)
+        loss = self._vaml_loss(model_in, target, idx, next_obs=next_obs, eval=True)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.detach()

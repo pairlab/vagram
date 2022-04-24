@@ -22,7 +22,7 @@ export MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 cd ~/mbrl-lib-iclr
 
 python3 -m mbrl.examples.main \
-	seed=$RANDOM \
+	seed=$1 \
 	algorithm=mbpo \
 	overrides=mbpo_hopper \
 	dynamics_model=gaussian_mlp_ensemble \
