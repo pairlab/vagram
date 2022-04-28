@@ -7,11 +7,11 @@ from mbrl.third_party.pytorch_sac import utils
 class DoubleQCritic(nn.Module):
     """Critic network, employes double Q-learning."""
 
-    def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth):
+    def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth, normalize_features=False):
         super().__init__()
 
-        self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
-        self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
+        self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth, normalize=normalize_features)
+        self.Q2 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth, normalize=normalize_features)
 
         self.outputs = dict()
         self.apply(utils.weight_init)

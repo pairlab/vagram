@@ -5,7 +5,8 @@
 import pathlib
 import pickle
 import warnings
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, Union, cast
+from mbrl.types import ModelInput
 
 import torch
 from torch import nn as nn
@@ -90,11 +91,9 @@ class VAMLMLP(Ensemble):
         use_vaml: bool = False,
         use_scaling: bool = True,
         use_all_vf: bool = True,
-        add_mse: bool = False
+        add_mse: bool = False,
     ):
-        super().__init__(
-            ensemble_size, device, propagation_method, deterministic=True
-        )
+        super().__init__(ensemble_size, device, propagation_method, deterministic=True)
 
         self.in_size = in_size
         self.out_size = out_size
@@ -277,7 +276,14 @@ class VAMLMLP(Ensemble):
         pred_mean, _ = self.forward(model_in, use_propagation=False)
         return F.mse_loss(pred_mean, target, reduction="none")
 
-    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor, idx: torch.Tensor, eval: bool = False) -> torch.Tensor:
+    def _vaml_loss(
+        self,
+        model_in: torch.Tensor,
+        target: torch.Tensor,
+        idx: torch.Tensor,
+        next_obs: torch.Tensor = None,
+        eval: bool = False,
+    ) -> torch.Tensor:
         # assert model_in.ndim == target.ndim
         if model_in.ndim == 2:  # add ensemble dimension
             model_in = model_in.unsqueeze(0)
@@ -285,26 +291,26 @@ class VAMLMLP(Ensemble):
         pred_mean, _ = self.forward(model_in, use_propagation=False)
         if target.shape[0] != self.num_members:
             target = target.repeat(self.num_members, 1, 1)
-        
-        target.requires_grad = True
+
+        next_obs.requires_grad = True
         self._agent.critic.requires_grad = False
         self._agent.critic_target.requires_grad = False
 
-        vf_pred = self.values(target[..., :-1])
-        vaml_loss = 0.
-        
+        vf_pred = self.values(next_obs)
+        vaml_loss = 0.0
+
         for i, vf in enumerate(vf_pred):
             if eval and torch.all(self.known_eval_gradients[idx]):
                 g = self.eval_gradients[idx, i].unsqueeze(0)
             elif torch.all(self.known_gradients[idx]):
                 g = self.gradients[idx, i].unsqueeze(0)
             else:
-                if i == len(vf) - 1:
+                if i == len(vf_pred) - 1:
                     # annoying hack to prevent memory leak in the graph
                     vf.sum().backward(retain_graph=False)
                 else:
                     vf.sum().backward(retain_graph=True)
-                g = target.grad.clone().detach().squeeze()[..., :-1]
+                g = next_obs.grad.clone().detach().squeeze()
                 if eval:
                     self.eval_gradients[idx, i] = g[0]
                 else:
@@ -312,47 +318,59 @@ class VAMLMLP(Ensemble):
 
             # quantile clipping
             if self.bound_clipping:
-                norms = torch.sqrt(torch.sum(g ** 2, -1))
-                quantile_bound = np.quantile(norms.detach().cpu().numpy(), self.bound_clipping_quantile)
+                norms = torch.sqrt(torch.sum(g**2, -1))
+                quantile_bound = np.quantile(
+                    norms.detach().cpu().numpy(), self.bound_clipping_quantile
+                )
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
-                g = torch.where(norms < quantile_bound, g, (quantile_bound/norms) * g).detach()
+                g = torch.where(
+                    torch.logical_or(norms < quantile_bound, norms < 100000), g, (quantile_bound / norms) * g
+                ).detach()
             else:
                 # hack to force copying the tensor
                 g = g.clone().detach()
             if self.use_vaml:
-                vaml_loss += (torch.sum(g * (pred_mean[..., :-1] - target[..., :-1]), -1, keepdim=True) ** 2)
+                vaml_loss += (
+                    torch.sum(
+                        g * (pred_mean[..., :-1] - target[..., :-1]), -1, keepdim=True
+                    )
+                    ** 2
+                )
             elif self.use_scaling:
-                vaml_loss += ((g * (pred_mean[..., :-1] - target[..., :-1])) ** 2)
+                vaml_loss += (g * (pred_mean[..., :-1] - target[..., :-1])) ** 2
             else:
-                raise NotImplementedError("Have to compute either Taylor VAML or scaled MSE")
+                raise NotImplementedError(
+                    "Have to compute either Taylor VAML or scaled MSE"
+                )
             self._agent.critic.zero_grad()
             self._agent.critic_target.zero_grad()
             if target.grad is not None:
-                target.grad[:] = 0.
+                target.grad[:] = 0.0
 
         if eval:
-            self.known_gradients[idx] = True        
+            self.known_gradients[idx] = True
         else:
-            self.known_gradients[idx] = True        
+            self.known_gradients[idx] = True
 
-        target.requires_grad = False
+        next_obs.requires_grad = False
         self._agent.critic.requires_grad = True
         self._agent.critic_target.requires_grad = True
-        
+
         vaml_loss /= len(vf_pred)
 
         # reward component
-        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
-        
+        vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2
+
         return vaml_loss
-    
+
     def loss(
         self,
         model_in: torch.Tensor,
         target: Optional[torch.Tensor] = None,
-        idx = None,
-        eval = False
+        idx=None,
+        next_obs=None,
+        eval=False,
     ) -> torch.Tensor:
         """Computes Gaussian NLL loss.
 
@@ -372,13 +390,50 @@ class VAMLMLP(Ensemble):
             the model over the given input/target. If the model is an ensemble, returns
             the average over all models.
         """
-        loss = self._vaml_loss(model_in, target, idx=idx, eval=False)
+        loss = self._vaml_loss(model_in, target, idx=idx, next_obs=next_obs, eval=False)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.mean()
 
+    def update(
+        self,
+        batch: ModelInput,
+        optimizer: torch.optim.Optimizer,
+        target: Optional[torch.Tensor] = None,
+        idx=None,
+        next_obs=None,
+    ) -> float:
+        """Updates the model using backpropagation with given input and target tensors.
+
+        Provides a basic update function, following the steps below:
+
+        .. code-block:: python
+
+           optimizer.zero_grad()
+           loss = self.loss(model_in, target)
+           loss.backward()
+           optimizer.step()
+
+        Args:
+            model_in (tensor or batch of transitions): the inputs to the model.
+            optimizer (torch.optimizer): the optimizer to use for the model.
+            target (tensor or sequence of tensors): the expected output for the given inputs, if it
+                cannot be computed from ``model_in``.
+
+        Returns:
+             (float): the numeric value of the computed loss.
+
+        """
+        optimizer = cast(torch.optim.Optimizer, optimizer)
+        self.train()
+        optimizer.zero_grad()
+        loss = self.loss(batch, target=target, idx=idx, next_obs=next_obs)
+        loss.backward()
+        optimizer.step()
+        return loss.detach().item()
+
     def eval_score(  # type: ignore
-        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None
+        self, model_in: torch.Tensor, target: Optional[torch.Tensor] = None, idx=None, next_obs=None
     ) -> torch.Tensor:
         """Computes the squared error for the model over the given input/target.
 
@@ -396,11 +451,10 @@ class VAMLMLP(Ensemble):
             (tensor): a tensor with the squared error per output dimension, batched over model.
         """
         # target = target.repeat((self.num_members, 1, 1))
-        loss = self._vaml_loss(model_in, target, idx, eval=True)
+        loss = self._vaml_loss(model_in, target, idx, next_obs=next_obs, eval=True)
         if self.add_mse:
             loss += self._mse_loss(model_in, target).mean(-1, keepdim=True)
         return loss.detach()
-
 
     def reset(  # type: ignore
         self, x: torch.Tensor, rng: Optional[torch.Generator] = None
@@ -471,10 +525,10 @@ class VAMLMLP(Ensemble):
 
     def set_agent(self, agent):
         self._agent = agent
-        self.gradients[:] = 0.
-        self.eval_gradients[:] = 0.
-        self.known_gradients[:] = 0.
-        self.known_eval_gradients[:] = 0.
+        self.gradients[:] = 0.0
+        self.eval_gradients[:] = 0.0
+        self.known_gradients[:] = 0.0
+        self.known_eval_gradients[:] = 0.0
 
     def set_gradient_buffer(self, obs_shape, act_shape, cfg):
         dataset_size = (
@@ -484,15 +538,26 @@ class VAMLMLP(Ensemble):
             dataset_size = cfg.overrides.num_steps
 
         if self.use_all_vf:
-            self.gradients = torch.zeros((dataset_size, 4, obs_shape[0]), device=self.device)
-            self.eval_gradients = torch.zeros((dataset_size, 4, obs_shape[0]), device=self.device)
+            self.gradients = torch.zeros(
+                (dataset_size, 4, obs_shape[0]), device=self.device
+            )
+            self.eval_gradients = torch.zeros(
+                (dataset_size, 4, obs_shape[0]), device=self.device
+            )
         else:
-            self.gradients = torch.zeros((dataset_size, 2, obs_shape[0]), device=self.device)
-            self.eval_gradients = torch.zeros((dataset_size, 2, obs_shape[0]), device=self.device)
+            self.gradients = torch.zeros(
+                (dataset_size, 2, obs_shape[0]), device=self.device
+            )
+            self.eval_gradients = torch.zeros(
+                (dataset_size, 2, obs_shape[0]), device=self.device
+            )
 
-        self.known_gradients = torch.zeros((dataset_size, 1), dtype=torch.bool, device=self.device)
-        self.known_eval_gradients = torch.zeros((dataset_size, 1), dtype=torch.bool, device=self.device)
-
+        self.known_gradients = torch.zeros(
+            (dataset_size, 1), dtype=torch.bool, device=self.device
+        )
+        self.known_eval_gradients = torch.zeros(
+            (dataset_size, 1), dtype=torch.bool, device=self.device
+        )
 
     def values(self, input):
         self._agent.actor.requires_grad = False
@@ -515,7 +580,13 @@ class ValueWeightedModel(VAMLMLP):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _vaml_loss(self, model_in: torch.Tensor, target: torch.Tensor, idx: torch.Tensor, eval: bool = False) -> torch.Tensor:
+    def _vaml_loss(
+        self,
+        model_in: torch.Tensor,
+        target: torch.Tensor,
+        idx: torch.Tensor,
+        eval: bool = False,
+    ) -> torch.Tensor:
         # assert model_in.ndim == target.ndim
         if model_in.ndim == 2:  # add ensemble dimension
             model_in = model_in.unsqueeze(0)
@@ -523,15 +594,15 @@ class ValueWeightedModel(VAMLMLP):
         pred_mean, _ = self.forward(model_in, use_propagation=False)
         if target.shape[0] != self.num_members:
             target = target.repeat(self.num_members, 1, 1)
-        
+
         vf_pred = self.values(target[..., :-1])
         vf_weighing = torch.abs(vf_pred).mean(0) / torch.sum(torch.abs(vf_pred))
         vf_weighing = vf_weighing.detach()
-        vaml_loss = 0.
-        
+        vaml_loss = 0.0
+
         vaml_loss += vf_weighing * ((pred_mean[..., :-1] - target[..., :-1]) ** 2)
 
         # reward component
-        vaml_loss += ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
-        
+        vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2
+
         return vaml_loss

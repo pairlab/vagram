@@ -29,4 +29,4 @@ python3 -m mbrl.examples.main \
 	dynamics_model=gaussian_mlp_ensemble \
 	dynamics_model.model.deterministic=True \
 	overrides.distraction_dimensions=$2 \
-	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
+	hydra.run.dir="/checkpoint/voelcker/$SLURM_JOB_ID"
