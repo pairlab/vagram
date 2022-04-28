@@ -325,7 +325,7 @@ class VAMLMLP(Ensemble):
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
                 g = torch.where(
-                    norms < quantile_bound, g, (quantile_bound / norms) * g
+                    torch.logical_or(norms < quantile_bound, norms < 100000), g, (quantile_bound / norms) * g
                 ).detach()
             else:
                 # hack to force copying the tensor
