@@ -1,13 +1,15 @@
 #!/bin/bash
 #SBATCH -N 1            # number of nodes on which to run
 #SBATCH --gres=gpu:1        # number of gpus
-#SBATCH -p 'rtx6000,t4v1,t4v2,p100'           # partition
+#SBATCH -p 't4v1,t4v2,p100'           # partition
 #SBATCH --cpus-per-task=1     # number of cpus required per task
 #SBATCH --ntasks=1
 #SBATCH --tasks-per-node=1
 #SBATCH --time=72:00:00      # time limit
 #SBATCH --mem=16GB         # minimum amount of real memory
 #SBATCH --job-name=mle_mbrl
+#SBATCH --account=deadline
+#SBATCH --qos=deadline
 
 source ~/.bashrc
 conda activate ClaasICLR
@@ -22,9 +24,11 @@ export MJKEY_PATH=/pkgs/mjpro150/mjkey.txt
 cd ~/mbrl-lib-iclr
 
 python3 -m mbrl.examples.main \
-	seed=$RANDOM \
+	seed=$1 \
 	algorithm=mbpo \
 	overrides=mbpo_hopper \
 	dynamics_model=gaussian_mlp_ensemble \
+	dynamics_model.model.num_layers=$2 \
+	dynamics_model.model.hid_size=64 \
 	dynamics_model.model.deterministic=True \
 	hydra.run.dir="$HOME/Claas/$SLURM_JOB_ID"
