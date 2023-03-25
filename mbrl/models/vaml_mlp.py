@@ -86,7 +86,7 @@ class VAMLMLP(Ensemble):
         hid_size: int = 200,
         use_silu: bool = False,
         propagation_method: Optional[str] = None,
-        bound_clipping: bool = False,
+        bound_clipping: bool = True,
         bound_clipping_quantile=0.95,
         use_vaml: bool = False,
         use_scaling: bool = True,
@@ -273,6 +273,9 @@ class VAMLMLP(Ensemble):
         if model_in.ndim == 2:  # add model dimension
             model_in = model_in.unsqueeze(0)
             target = target.unsqueeze(0)
+            target = target.repeat(model_in.shape[0], 1, 1)
+        if target.shape[0] != model_in.shape[0]:
+            target = target.repeat(model_in.shape[0], 1, 1)
         pred_mean, _ = self.forward(model_in, use_propagation=False)
         return F.mse_loss(pred_mean, target, reduction="none")
 
@@ -311,6 +314,7 @@ class VAMLMLP(Ensemble):
                 else:
                     vf.sum().backward(retain_graph=True)
                 g = next_obs.grad.clone().detach().squeeze()
+                g = torch.nan_to_num(g, 100000)
                 if eval:
                     self.eval_gradients[idx, i] = g[0]
                 else:
@@ -318,15 +322,17 @@ class VAMLMLP(Ensemble):
 
             # quantile clipping
             if self.bound_clipping:
-                norms = torch.sqrt(torch.sum(g**2, -1))
-                quantile_bound = np.quantile(
-                    norms.detach().cpu().numpy(), self.bound_clipping_quantile
+                g = torch.clamp(g, 0.001, 10000)
+                norms = torch.linalg.norm(g, dim=-1)
+                quantile_bound = torch.quantile(
+                    norms, self.bound_clipping_quantile
                 )
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
                 g = torch.where(
-                    torch.logical_or(norms < quantile_bound, norms < 100000), g, (quantile_bound / norms) * g
+                    torch.logical_and(norms < quantile_bound, norms < 10000), g, (quantile_bound / norms) * g
                 ).detach()
+                g = g / torch.mean(torch.clamp(norms, 0., min(10000, quantile_bound)))
             else:
                 # hack to force copying the tensor
                 g = g.clone().detach()
@@ -356,8 +362,6 @@ class VAMLMLP(Ensemble):
         next_obs.requires_grad = False
         self._agent.critic.requires_grad = True
         self._agent.critic_target.requires_grad = True
-
-        vaml_loss /= len(vf_pred)
 
         # reward component
         vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2

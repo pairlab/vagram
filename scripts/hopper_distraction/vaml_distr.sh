@@ -18,11 +18,11 @@ export MUJOCO_PY_BYPASS_LOCK=true
 source ~/.bashrc
 conda activate ClaasICLR
 
-export PYTHONPATH=/h/$USER/mbrl-lib-iclr
+export PYTHONPATH=/h/$USER/Code/project_codebases/vagram
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/h/voelcker/.mujoco/mujoco210/bin
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 
-cd /h/$USER/mbrl-lib-iclr
+cd ~/Code/project_codebases/vagram
 
 python3 -m mbrl.examples.main \
 	seed=$1 \
