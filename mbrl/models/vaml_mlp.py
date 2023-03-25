@@ -322,7 +322,8 @@ class VAMLMLP(Ensemble):
 
             # quantile clipping
             if self.bound_clipping:
-                g = torch.clamp(g, 0.001, 10000)
+                g = g.abs()
+                g = torch.clamp(g, 1e-5, 10000)
                 norms = torch.linalg.norm(g, dim=-1)
                 quantile_bound = torch.quantile(
                     norms, self.bound_clipping_quantile
