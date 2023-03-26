@@ -132,6 +132,8 @@ class VAMLMLP(Ensemble):
         self.add_mse = add_mse
         self.use_all_vf = use_all_vf
 
+        self.norm_avg = 1.
+
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
             return
@@ -322,8 +324,6 @@ class VAMLMLP(Ensemble):
 
             # quantile clipping
             if self.bound_clipping:
-                g = g.abs()
-                g = torch.clamp(g, 1e-5, 10000)
                 norms = torch.linalg.norm(g, dim=-1)
                 quantile_bound = torch.quantile(
                     norms, self.bound_clipping_quantile
@@ -331,9 +331,12 @@ class VAMLMLP(Ensemble):
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
                 g = torch.where(
-                    torch.logical_and(norms < quantile_bound, norms < 10000), g, (quantile_bound / norms) * g
-                ).detach()
-                g = g / torch.mean(torch.clamp(norms, 0., min(10000, quantile_bound)))
+                    torch.logical_and(norms < quantile_bound), g, (quantile_bound / norms) * g
+                ).clone().detach()
+                if eval:
+                    print(f"{norms.max()}, {torch.mean(norms)}")
+                self.norm_avg = 0.999 * self.norm_avg + 0.001 * torch.mean(norms)
+                g = g /self.norm_avg 
             else:
                 # hack to force copying the tensor
                 g = g.clone().detach()
