@@ -5,7 +5,7 @@ num_steps: 300000
 epoch_length: 1000
 num_elites: 5
 patience: 10
-model_lr: 0.0003
+model_lr: 0.001
 model_wd: 0.00002
 model_batch_size: 256
 validation_ratio: 0.2

@@ -14,6 +14,7 @@ from torch.nn import functional as F
 import numpy as np
 
 import mbrl.util.math
+import math
 
 from .model import Ensemble
 from .util import EnsembleLinearLayer, truncated_normal_init
@@ -133,6 +134,8 @@ class VAMLMLP(Ensemble):
         self.use_all_vf = use_all_vf
 
         self.norm_avg = 1.
+        self.up_avg = 1.
+        self.low_avg = 1.
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -307,8 +310,8 @@ class VAMLMLP(Ensemble):
         for i, vf in enumerate(vf_pred):
             if eval and torch.all(self.known_eval_gradients[idx]):
                 g = self.eval_gradients[idx, i].unsqueeze(0)
-            elif torch.all(self.known_gradients[idx]):
-                g = self.gradients[idx, i].unsqueeze(0)
+            elif (not eval) and torch.all(self.known_gradients[idx]):
+                g = self.gradients[:, idx, i]
             else:
                 if i == len(vf_pred) - 1:
                     # annoying hack to prevent memory leak in the graph
@@ -316,27 +319,33 @@ class VAMLMLP(Ensemble):
                 else:
                     vf.sum().backward(retain_graph=True)
                 g = next_obs.grad.clone().detach().squeeze()
-                g = torch.nan_to_num(g, 100000)
+                g = torch.nan_to_num(g, 1000)
                 if eval:
-                    self.eval_gradients[idx, i] = g[0]
+                    self.eval_gradients[idx, i] = g.clone()
                 else:
-                    self.gradients[idx, i] = g[0]
+                    self.gradients[:, idx, i] = g.clone()
 
             # quantile clipping
             if self.bound_clipping:
                 norms = torch.linalg.norm(g, dim=-1)
-                quantile_bound = torch.quantile(
+                upper_quantile_bound = torch.quantile(
                     norms, self.bound_clipping_quantile
                 )
+                lower_quantile_bound = torch.quantile(
+                    norms, 1. - self.bound_clipping_quantile
+                )
+                self.norm_avg = 0.995 * self.norm_avg + 0.005 * torch.clamp(norms, lower_quantile_bound, upper_quantile_bound).mean()
+                self.up_avg = 0.995 * self.up_avg + 0.005 * upper_quantile_bound
+                self.low_avg = 0.995 * self.low_avg + 0.005 * lower_quantile_bound
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
                 g = torch.where(
-                    torch.logical_and(norms < quantile_bound), g, (quantile_bound / norms) * g
-                ).clone().detach()
-                if eval:
-                    print(f"{norms.max()}, {torch.mean(norms)}")
-                self.norm_avg = 0.999 * self.norm_avg + 0.001 * torch.mean(norms)
-                g = g /self.norm_avg 
+                    norms < self.up_avg, g, (self.up_avg / norms) * g
+                )
+                g = torch.where(
+                    norms > self.low_avg, g, (self.low_avg / norms) * g
+                )
+                g = g.clone().detach()
             else:
                 # hack to force copying the tensor
                 g = g.clone().detach()
@@ -359,16 +368,16 @@ class VAMLMLP(Ensemble):
                 target.grad[:] = 0.0
 
         if eval:
-            self.known_gradients[idx] = True
+            self.known_eval_gradients[idx] = True
         else:
             self.known_gradients[idx] = True
 
         next_obs.requires_grad = False
         self._agent.critic.requires_grad = True
-        self._agent.critic_target.requires_grad = True
+        self._agent.critic_target.requires_grad = False
 
         # reward component
-        vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2
+        vaml_loss += self.norm_avg * ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
 
         return vaml_loss
 
@@ -533,8 +542,8 @@ class VAMLMLP(Ensemble):
 
     def set_agent(self, agent):
         self._agent = agent
-        self.gradients[:] = 0.0
-        self.eval_gradients[:] = 0.0
+        # self.gradients[:] = 0.0
+        # self.eval_gradients[:] = 0.0
         self.known_gradients[:] = 0.0
         self.known_eval_gradients[:] = 0.0
 
@@ -547,14 +556,14 @@ class VAMLMLP(Ensemble):
 
         if self.use_all_vf:
             self.gradients = torch.zeros(
-                (dataset_size, 4, obs_shape[0]), device=self.device
+                (self.num_members, dataset_size, 4, obs_shape[0]), device=self.device
             )
             self.eval_gradients = torch.zeros(
                 (dataset_size, 4, obs_shape[0]), device=self.device
             )
         else:
             self.gradients = torch.zeros(
-                (dataset_size, 2, obs_shape[0]), device=self.device
+                (self.num_members, dataset_size, 2, obs_shape[0]), device=self.device
             )
             self.eval_gradients = torch.zeros(
                 (dataset_size, 2, obs_shape[0]), device=self.device

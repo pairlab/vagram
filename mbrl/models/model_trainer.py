@@ -21,6 +21,7 @@ MODEL_LOG_FORMAT = [
     ("train_dataset_size", "TD", "int"),
     ("val_dataset_size", "VD", "int"),
     ("model_loss", "MLOSS", "float"),
+    ("grad_avg", "GAVG", "float"),
     ("model_val_score", "MVSCORE", "float"),
     ("model_best_val_score", "MBVSCORE", "float"),
 ]
@@ -115,7 +116,10 @@ class ModelTrainer:
         best_weights: Optional[Dict] = None
         epoch_iter = range(num_epochs) if num_epochs else itertools.count()
         epochs_since_update = 0
-        best_val_score = self.evaluate(eval_dataset)
+        max_float32 = torch.finfo(torch.float32).max/2.
+        max_tensor = torch.full((self.model.model.num_members,), max_float32, dtype=torch.float32)
+        best_val_score = max_tensor.to(self.model.device)
+
         for epoch in epoch_iter:
             batch_losses: List[float] = []
             for batch in dataset_train:
@@ -148,6 +152,7 @@ class ModelTrainer:
                         if dataset_val is not None
                         else 0,
                         "model_loss": total_avg_loss,
+                        "grad_avg": self.model.model.norm_avg,
                         "model_val_score": eval_score.mean(),
                         "model_best_val_score": best_val_score.mean(),
                     },
@@ -229,8 +234,8 @@ class ModelTrainer:
     def _maybe_set_best_weights_and_elite(
         self, best_weights: Optional[Dict], best_val_score: torch.Tensor
     ):
-        if best_weights is not None:
-            self.model.load_state_dict(best_weights)
+        # if best_weights is not None:
+        #     self.model.load_state_dict(best_weights)
         if len(best_val_score) > 1 and hasattr(self.model, "num_elites"):
             sorted_indices = np.argsort(best_val_score.tolist())
             elite_models = sorted_indices[: self.model.num_elites]
