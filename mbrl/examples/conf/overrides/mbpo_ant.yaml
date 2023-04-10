@@ -4,7 +4,7 @@ env: "ant_truncated_obs"
 num_steps: 300000
 epoch_length: 1000
 num_elites: 5
-patience: 10
+patience: 5
 model_lr: 0.001
 model_wd: 0.00002
 model_batch_size: 256

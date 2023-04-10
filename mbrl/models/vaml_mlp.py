@@ -321,9 +321,9 @@ class VAMLMLP(Ensemble):
                 g = next_obs.grad.clone().detach().squeeze()
                 g = torch.nan_to_num(g, 1000)
                 if eval:
-                    self.eval_gradients[idx, i] = g.clone()
+                    self.eval_gradients[idx, i] = g.clone().view(self.eval_gradients[idx, i].shape)
                 else:
-                    self.gradients[:, idx, i] = g.clone()
+                    self.gradients[:, idx, i] = g.clone().view(self.gradients[:, idx, i].shape)
 
             # quantile clipping
             if self.bound_clipping:
@@ -377,7 +377,7 @@ class VAMLMLP(Ensemble):
         self._agent.critic_target.requires_grad = False
 
         # reward component
-        vaml_loss += self.norm_avg * ((pred_mean[..., -1:] - target[..., -1:]) ** 2)
+        vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2
 
         return vaml_loss
 
