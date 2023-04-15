@@ -34,7 +34,7 @@ class DoubleQCritic(nn.Module):
 
         assert len(self.Q1) == len(self.Q2)
         for i, (m1, m2) in enumerate(zip(self.Q1, self.Q2)):
-            assert type(m1) == type(m2)
+            # assert type(m1) == type(m2), f"m1: {type(m1)}, m2: {type(m2)}"
             if type(m1) is nn.Linear:
                 logger.log_param(f"train_critic/q1_fc{i}", m1, step)
                 logger.log_param(f"train_critic/q2_fc{i}", m2, step)

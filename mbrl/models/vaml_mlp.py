@@ -133,9 +133,9 @@ class VAMLMLP(Ensemble):
         self.add_mse = add_mse
         self.use_all_vf = use_all_vf
 
-        self.norm_avg = 1.
-        self.up_avg = 1.
-        self.low_avg = 1.
+        self.norm_avg = nn.Parameter(torch.Tensor([1.]).to(device), requires_grad=False)
+        self.up_avg = nn.Parameter(torch.Tensor([1.]).to(device), requires_grad=False)
+        self.low_avg = nn.Parameter(torch.Tensor([1.]).to(device), requires_grad=False)
 
     def _maybe_toggle_layers_use_only_elite(self, only_elite: bool):
         if self.elite_models is None:
@@ -334,9 +334,9 @@ class VAMLMLP(Ensemble):
                 lower_quantile_bound = torch.quantile(
                     norms, 1. - self.bound_clipping_quantile
                 )
-                self.norm_avg = 0.995 * self.norm_avg + 0.005 * torch.clamp(norms, lower_quantile_bound, upper_quantile_bound).mean()
-                self.up_avg = 0.995 * self.up_avg + 0.005 * upper_quantile_bound
-                self.low_avg = 0.995 * self.low_avg + 0.005 * lower_quantile_bound
+                self.norm_avg = nn.Parameter(0.995 * self.norm_avg + 0.005 * torch.clamp(norms, lower_quantile_bound, upper_quantile_bound).mean(), requires_grad=False)
+                self.up_avg = nn.Parameter(0.995 * self.up_avg + 0.005 * upper_quantile_bound, requires_grad=False)
+                self.low_avg = nn.Parameter(0.995 * self.low_avg + 0.005 * lower_quantile_bound, requires_grad=False)
                 # absolute bound on gradients
                 norms = norms.unsqueeze(-1)
                 g = torch.where(
@@ -377,7 +377,7 @@ class VAMLMLP(Ensemble):
         self._agent.critic_target.requires_grad = False
 
         # reward component
-        vaml_loss += (pred_mean[..., -1:] - target[..., -1:]) ** 2
+        vaml_loss += (self.norm_avg ** 2) * (pred_mean[..., -1:] - target[..., -1:]) ** 2
 
         return vaml_loss
 

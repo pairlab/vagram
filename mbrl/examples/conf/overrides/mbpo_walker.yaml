@@ -5,7 +5,7 @@ term_fn: "walker2d"
 num_steps: 500000
 epoch_length: 1000
 num_elites: 5
-patience: 10
+patience: 5
 model_lr: 0.0003
 model_wd: 0.00002
 model_batch_size: 256
